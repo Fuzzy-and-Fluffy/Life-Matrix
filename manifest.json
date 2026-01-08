@@ -1,0 +1,27 @@
+{
+  "name": "LifeMatrix - 无限游戏",
+  "short_name": "LifeMatrix",
+  "description": "将人生视为一场无限游戏，让每一次微小的进化都可见。",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0ea5e9",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "lifestyle", "games"],
+  "lang": "zh-CN",
+  "dir": "ltr"
+}
