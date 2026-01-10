@@ -552,21 +552,75 @@
             };
 
             // --- 登录方法 ---
+            const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
+            const [authEmail, setAuthEmail] = useState('');
+            const [authPassword, setAuthPassword] = useState('');
+            const [authError, setAuthError] = useState('');
+
             const signInWithGoogle = async () => {
                 try {
+                    setAuthError('');
                     const provider = new firebase.auth.GoogleAuthProvider();
                     await auth.signInWithPopup(provider);
-                    setModalType(null);
                 } catch (e) {
                     console.error("Google sign-in error", e);
-                    alert("登录失败: " + e.message);
+                    setAuthError(getAuthErrorMessage(e.code));
                 }
+            };
+
+            const signInWithEmail = async () => {
+                if (!authEmail || !authPassword) {
+                    setAuthError('请填写邮箱和密码');
+                    return;
+                }
+                try {
+                    setAuthError('');
+                    await auth.signInWithEmailAndPassword(authEmail, authPassword);
+                } catch (e) {
+                    console.error("Email sign-in error", e);
+                    setAuthError(getAuthErrorMessage(e.code));
+                }
+            };
+
+            const signUpWithEmail = async () => {
+                if (!authEmail || !authPassword) {
+                    setAuthError('请填写邮箱和密码');
+                    return;
+                }
+                if (authPassword.length < 6) {
+                    setAuthError('密码至少需要6位');
+                    return;
+                }
+                try {
+                    setAuthError('');
+                    await auth.createUserWithEmailAndPassword(authEmail, authPassword);
+                } catch (e) {
+                    console.error("Email sign-up error", e);
+                    setAuthError(getAuthErrorMessage(e.code));
+                }
+            };
+
+            const getAuthErrorMessage = (code) => {
+                const messages = {
+                    'auth/email-already-in-use': '该邮箱已被注册',
+                    'auth/invalid-email': '邮箱格式不正确',
+                    'auth/weak-password': '密码强度太弱',
+                    'auth/user-not-found': '用户不存在',
+                    'auth/wrong-password': '密码错误',
+                    'auth/too-many-requests': '尝试次数过多，请稍后再试',
+                    'auth/popup-closed-by-user': '登录窗口被关闭',
+                    'auth/network-request-failed': '网络连接失败'
+                };
+                return messages[code] || '登录失败，请重试';
             };
 
             const signOut = async () => {
                 try {
                     await auth.signOut();
                     setSyncStatus('idle');
+                    setStep(1);
+                    setAuthEmail('');
+                    setAuthPassword('');
                 } catch (e) {
                     console.error("Sign out error", e);
                 }
@@ -692,15 +746,96 @@
 
             // --- Views ---
 
-            if (step === 1) return (
+            // 加载中状态
+            if (authLoading) return (
+                <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+                    <div className="text-center animate-fade-in">
+                        <div className="inline-flex p-4 bg-sky-50 rounded-2xl text-sky-500 shadow-inner mb-4 animate-pulse"><Icon name="sparkle" size={32} /></div>
+                        <p className="text-slate-400 text-sm font-bold">加载中...</p>
+                    </div>
+                </div>
+            );
+
+            // 登录/注册页面
+            if (step === 1 && !currentUser) return (
                 <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
                     <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-xl shadow-slate-200/50 text-center animate-fade-in">
-                        <div className="mb-10 space-y-4">
+                        <div className="mb-8 space-y-4">
                             <div className="inline-flex p-4 bg-sky-50 rounded-2xl text-sky-500 shadow-inner"><Icon name="sparkle" size={32} /></div>
                             <h1 className="text-2xl font-black text-slate-800 tracking-tight">你好，旅行者。</h1>
                             <p className="text-slate-400 text-sm">欢迎进入人生这场无限游戏。</p>
                         </div>
-                        <div className="space-y-8 flex flex-col items-center">
+
+                        <div className="space-y-4">
+                            {/* Google 登录 */}
+                            <button
+                                onClick={signInWithGoogle}
+                                className="w-full bg-white border-2 border-slate-200 hover:border-slate-300 hover:bg-slate-50 py-4 rounded-2xl flex items-center justify-center gap-3 transition-all"
+                            >
+                                <Icon name="google" size={20} className="text-slate-600" />
+                                <span className="font-bold text-sm text-slate-700">使用 Google {authMode === 'register' ? '注册' : '登录'}</span>
+                            </button>
+
+                            <div className="flex items-center gap-4 my-6">
+                                <div className="flex-1 h-px bg-slate-100"></div>
+                                <span className="text-xs text-slate-300 font-bold">或使用邮箱</span>
+                                <div className="flex-1 h-px bg-slate-100"></div>
+                            </div>
+
+                            {/* 邮箱登录表单 */}
+                            <input
+                                type="email"
+                                value={authEmail}
+                                onChange={e => setAuthEmail(e.target.value)}
+                                placeholder="邮箱地址"
+                                className="w-full bg-slate-50 rounded-2xl px-6 py-4 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-sky-100 transition-all"
+                            />
+                            <input
+                                type="password"
+                                value={authPassword}
+                                onChange={e => setAuthPassword(e.target.value)}
+                                placeholder="密码（至少6位）"
+                                className="w-full bg-slate-50 rounded-2xl px-6 py-4 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-sky-100 transition-all"
+                                onKeyPress={e => e.key === 'Enter' && (authMode === 'register' ? signUpWithEmail() : signInWithEmail())}
+                            />
+
+                            {/* 错误提示 */}
+                            {authError && (
+                                <div className="bg-rose-50 border border-rose-100 rounded-xl px-4 py-3 text-rose-500 text-xs font-bold">
+                                    {authError}
+                                </div>
+                            )}
+
+                            {/* 提交按钮 */}
+                            <button
+                                onClick={authMode === 'register' ? signUpWithEmail : signInWithEmail}
+                                className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
+                            >
+                                {authMode === 'register' ? '注册账号' : '登录'}
+                            </button>
+
+                            {/* 切换登录/注册 */}
+                            <button
+                                onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setAuthError(''); }}
+                                className="text-slate-400 text-xs font-bold hover:text-slate-600 transition-colors"
+                            >
+                                {authMode === 'register' ? '已有账号？点击登录' : '没有账号？点击注册'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            // 如果用户已登录但是新用户(没有scores)，显示设置页面
+            if (step === 1 && currentUser) return (
+                <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+                    <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-xl shadow-slate-200/50 text-center animate-fade-in">
+                        <div className="mb-8 space-y-4">
+                            <div className="inline-flex p-4 bg-emerald-50 rounded-2xl text-emerald-500 shadow-inner"><Icon name="check" size={32} /></div>
+                            <h1 className="text-2xl font-black text-slate-800 tracking-tight">欢迎回来！</h1>
+                            <p className="text-slate-400 text-sm">设置你的个人资料开始旅程。</p>
+                        </div>
+                        <div className="space-y-6 flex flex-col items-center">
                             <div className="relative cursor-pointer group" onClick={() => fileInputRef.current.click()}>
                                 <div className={`w-28 h-28 rounded-[2.2rem] flex items-center justify-center overflow-hidden transition-all border-2 ${avatar ? 'border-sky-100 shadow-xl' : 'bg-slate-50 border-dashed border-slate-200 group-hover:border-sky-300'}`}>
                                     {avatar ? <img src={avatar} className="w-full h-full object-cover" /> : <Icon name="user" size={36} className="text-slate-300" />}
@@ -709,7 +844,7 @@
                                 <div className="absolute -bottom-1 -right-1 bg-white p-2 rounded-xl shadow border border-slate-50 text-slate-400"><Icon name="camera" size={14} /></div>
                             </div>
                             <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="输入你的昵称" className="w-full bg-slate-50 rounded-2xl px-6 py-4 text-center font-bold text-slate-700 outline-none" />
-                            <button onClick={() => name && setStep(2)} disabled={!name} className={`w-full py-4.5 rounded-2xl font-black text-xs uppercase tracking-widest ${name ? 'bg-slate-900 text-white shadow-xl hover:scale-[1.02] active:scale-95 transition-all' : 'bg-slate-100 text-slate-300'}`}>初始化系统</button>
+                            <button onClick={() => name && setStep(2)} disabled={!name} className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest ${name ? 'bg-slate-900 text-white shadow-xl hover:scale-[1.02] active:scale-95 transition-all' : 'bg-slate-100 text-slate-300'}`}>开始设置</button>
                         </div>
                     </div>
                 </div>
