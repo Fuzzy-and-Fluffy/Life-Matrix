@@ -39,4 +39,14 @@ Life-Matrix/
 
 ## 许可
 
-MIT License
+Copyright (c) 2026 Fuzzy-and-Fluffy
+
+All rights reserved.
+
+Permission is granted to use, copy, and modify this software
+for personal and non-commercial purposes only.
+
+Commercial use, including but not limited to use in
+commercial products, services, SaaS, or internal business
+operations, requires a separate written license.
+
