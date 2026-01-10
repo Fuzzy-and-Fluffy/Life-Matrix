@@ -81,13 +81,13 @@
 
         // --- Firebase 配置 ---
         const firebaseConfig = {
-            apiKey: "AIzaSyCA7sDU6vVSPft1_FDdjSojHQIIv9KK7jw",
-            authDomain: "life-matrix-e56f7.firebaseapp.com",
-            projectId: "life-matrix-e56f7",
-            storageBucket: "life-matrix-e56f7.firebasestorage.app",
-            messagingSenderId: "264771464884",
-            appId: "1:264771464884:web:3575be9cff9c9121fcf1e1",
-            measurementId: "G-BV9H99ZQ1H"
+            apiKey: "AIzaSyBH1q0cAYUfKg04brS2JN4Rmm4FSqne2JU",
+            authDomain: "life-matrix-c6b45.firebaseapp.com",
+            projectId: "life-matrix-c6b45",
+            storageBucket: "life-matrix-c6b45.firebasestorage.app",
+            messagingSenderId: "586491009176",
+            appId: "1:586491009176:web:3c60fce03bc5e8033098ed",
+            measurementId: "G-XTY0XDG3DF"
         };
 
         // 初始化 Firebase
@@ -796,7 +796,7 @@
                                 onChange={e => setAuthPassword(e.target.value)}
                                 placeholder="密码（至少6位）"
                                 className="w-full bg-slate-50 rounded-2xl px-6 py-4 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-sky-100 transition-all"
-                                onKeyPress={e => e.key === 'Enter' && signInWithEmail()}
+                                onKeyDown={e => e.key === 'Enter' && signInWithEmail()}
                             />
 
                             {/* 错误提示 */}
