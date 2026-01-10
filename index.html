@@ -289,7 +289,7 @@
                                 onChange={e => setText(e.target.value)}
                                 placeholder="你完成了什么？"
                                 className="w-full bg-slate-50 border-none rounded-2xl px-6 py-5 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-sky-100 transition-all"
-                                onKeyPress={e => e.key === 'Enter' && onConfirm(text)}
+                                onKeyDown={e => e.key === 'Enter' && onConfirm(text)}
                             />
                             {suggestions.length > 0 && (
                                 <div className="space-y-2">
@@ -773,7 +773,7 @@
                                 className="w-full bg-white border-2 border-slate-200 hover:border-slate-300 hover:bg-slate-50 py-4 rounded-2xl flex items-center justify-center gap-3 transition-all"
                             >
                                 <Icon name="google" size={20} className="text-slate-600" />
-                                <span className="font-bold text-sm text-slate-700">使用 Google {authMode === 'register' ? '注册' : '登录'}</span>
+                                <span className="font-bold text-sm text-slate-700">使用 Google 继续</span>
                             </button>
 
                             <div className="flex items-center gap-4 my-6">
@@ -782,7 +782,7 @@
                                 <div className="flex-1 h-px bg-slate-100"></div>
                             </div>
 
-                            {/* 邮箱登录表单 */}
+                            {/* 邮箱表单 */}
                             <input
                                 type="email"
                                 value={authEmail}
@@ -796,7 +796,7 @@
                                 onChange={e => setAuthPassword(e.target.value)}
                                 placeholder="密码（至少6位）"
                                 className="w-full bg-slate-50 rounded-2xl px-6 py-4 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-sky-100 transition-all"
-                                onKeyPress={e => e.key === 'Enter' && (authMode === 'register' ? signUpWithEmail() : signInWithEmail())}
+                                onKeyPress={e => e.key === 'Enter' && signInWithEmail()}
                             />
 
                             {/* 错误提示 */}
@@ -806,21 +806,25 @@
                                 </div>
                             )}
 
-                            {/* 提交按钮 */}
-                            <button
-                                onClick={authMode === 'register' ? signUpWithEmail : signInWithEmail}
-                                className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
-                            >
-                                {authMode === 'register' ? '注册账号' : '登录'}
-                            </button>
+                            {/* 登录 和 注册 按钮并排 */}
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={signInWithEmail}
+                                    className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
+                                >
+                                    登录
+                                </button>
+                                <button
+                                    onClick={signUpWithEmail}
+                                    className="flex-1 bg-sky-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-sky-400 hover:scale-[1.02] active:scale-95 transition-all"
+                                >
+                                    注册
+                                </button>
+                            </div>
 
-                            {/* 切换登录/注册 */}
-                            <button
-                                onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setAuthError(''); }}
-                                className="text-slate-400 text-xs font-bold hover:text-slate-600 transition-colors"
-                            >
-                                {authMode === 'register' ? '已有账号？点击登录' : '没有账号？点击注册'}
-                            </button>
+                            <p className="text-slate-300 text-[10px] text-center">
+                                新用户直接点击「注册」，老用户点击「登录」
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -878,7 +882,7 @@
                             ))}
                         </div>
                         <div className="flex gap-2 mb-10 px-1">
-                            <input type="text" value={customDimName} onChange={e => setCustomDimName(e.target.value)} placeholder="新增方向..." className="flex-1 bg-slate-50 border-none rounded-2xl px-5 py-3.5 text-xs font-bold outline-none" onKeyPress={e => e.key === 'Enter' && addCustomDim()} />
+                            <input type="text" value={customDimName} onChange={e => setCustomDimName(e.target.value)} placeholder="新增方向..." className="flex-1 bg-slate-50 border-none rounded-2xl px-5 py-3.5 text-xs font-bold outline-none" onKeyDown={e => e.key === 'Enter' && addCustomDim()} />
                             <button onClick={addCustomDim} className="bg-slate-900 text-white w-12 rounded-xl flex items-center justify-center shadow-lg"><Icon name="plus" size={18} /></button>
                         </div>
                         <div className="px-2 mb-8 space-y-2 text-center text-[11px] leading-relaxed">
@@ -925,7 +929,7 @@
                     {/* Header */}
                     <header className="w-full max-w-4xl flex justify-between items-start mb-8 relative">
                         {/* 左：日历 */}
-                        <button onClick={() => setModalType('calendar')} className="p-3 bg-white rounded-2xl shadow-sm text-slate-400 hover:text-sky-500 transition-colors"><Icon name="clock" size={20} /></button>
+                        <button onClick={() => setModalType('calendar')} aria-label="查看日历" className="p-3 bg-white rounded-2xl shadow-sm text-slate-400 hover:text-sky-500 transition-colors"><Icon name="clock" size={20} /></button>
 
                         <div className="flex flex-col items-center mt-2">
                             <div className="w-16 h-16 rounded-[1.8rem] bg-white p-1 shadow shadow-slate-200 overflow-hidden ring-4 ring-white border border-slate-50 mb-2">
@@ -966,7 +970,7 @@
                         </div>
 
                         {/* 右：设置 */}
-                        <button onClick={() => setModalType('settings')} className="p-3 bg-white rounded-2xl shadow-sm text-slate-400 hover:text-slate-600 transition-colors"><Icon name="settings" size={20} /></button>
+                        <button onClick={() => setModalType('settings')} aria-label="设置" className="p-3 bg-white rounded-2xl shadow-sm text-slate-400 hover:text-slate-600 transition-colors"><Icon name="settings" size={20} /></button>
                     </header>
 
                     {/* Main Radar Card */}
