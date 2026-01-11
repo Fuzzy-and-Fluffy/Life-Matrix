@@ -308,9 +308,9 @@
             );
         };
 
-        const RecordModal = ({ dimName, onClose, onConfirm, history }) => {
-            const [text, setText] = useState("");
-            const [tags, setTags] = useState([]);
+        const RecordModal = ({ dimName, onClose, onConfirm, history, initialText = "", initialTags = [], isEdit = false }) => {
+            const [text, setText] = useState(initialText);
+            const [tags, setTags] = useState(initialTags);
             const [tagInput, setTagInput] = useState("");
 
             const suggestions = useMemo(() => {
@@ -359,7 +359,7 @@
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-6 z-50 animate-fade-in">
                     <div className="bg-white w-full max-sm rounded-[3rem] p-8 shadow-2xl flex flex-col gap-5">
                         <div>
-                            <h3 className="text-xl font-black text-slate-800 mb-1">记录进度</h3>
+                            <h3 className="text-xl font-black text-slate-800 mb-1">{isEdit ? '编辑记录' : '记录进度'}</h3>
                             <p className="text-xs text-slate-400 mb-2 uppercase tracking-widest font-bold">领域: {dimName}</p>
                         </div>
                         <div className="space-y-4">
@@ -436,7 +436,7 @@
                             )}
                         </div>
                         <div className="flex flex-col gap-3 mt-2">
-                            <button onClick={handleConfirm} className="w-full bg-sky-600 text-white py-4.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-sky-100 hover:bg-sky-500 active:scale-95 transition-all">确认进度</button>
+                            <button onClick={handleConfirm} className="w-full bg-sky-600 text-white py-4.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-sky-100 hover:bg-sky-500 active:scale-95 transition-all">{isEdit ? '保存更改' : '确认进度'}</button>
                             <button onClick={onClose} className="w-full text-slate-300 font-bold text-xs uppercase tracking-widest py-2">取消</button>
                         </div>
                     </div>
@@ -787,6 +787,7 @@
             // Modal States
             const [modalType, setModalType] = useState(null); // 'record' | 'calendar' | 'settings' | 'auth' | null
             const [selectedDimIdx, setSelectedDimIdx] = useState(0);
+            const [editingRecordIdx, setEditingRecordIdx] = useState(null); // null 表示新建，数字表示编辑第几条记录
             const [customDimName, setCustomDimName] = useState("");
 
             const fileInputRef = useRef(null);
@@ -1060,6 +1061,12 @@
             const handleRecordConfirm = (text, tags = []) => {
                 if (!text || !text.trim()) return;
 
+                // 如果是编辑模式，调用编辑函数
+                if (editingRecordIdx !== null) {
+                    handleRecordEdit(text, tags);
+                    return;
+                }
+
                 const newScores = [...(scores || [])];
                 while (newScores.length <= selectedDimIdx) newScores.push(0);
                 newScores[selectedDimIdx] = (newScores[selectedDimIdx] || 0) + 1;
@@ -1080,7 +1087,26 @@
                 setScores(newScores);
                 setHistory(newHistory);
                 setModalType(null);
+                setEditingRecordIdx(null);
                 saveData(newScores, newHistory, null);
+            };
+
+            const handleRecordEdit = (text, tags = []) => {
+                if (!text || !text.trim() || editingRecordIdx === null) return;
+
+                const newHistory = [...(history || [])];
+                if (editingRecordIdx < newHistory.length) {
+                    // 更新记录，保留原有的其他字段
+                    newHistory[editingRecordIdx] = {
+                        ...newHistory[editingRecordIdx],
+                        text: text,
+                        tags: tags
+                    };
+                    setHistory(newHistory);
+                    setModalType(null);
+                    setEditingRecordIdx(null);
+                    saveData(null, newHistory, null);
+                }
             };
 
             const totalExp = (scores || []).reduce((a, b) => a + b, 0);
@@ -1323,6 +1349,7 @@
                             scores={scores}
                             onLabelClick={(idx) => {
                                 setSelectedDimIdx(idx);
+                                setEditingRecordIdx(null); // 重置编辑状态
                                 setModalType('record');
                             }}
                             size={400}
@@ -1343,7 +1370,7 @@
                                 <div className="text-center py-12 bg-white/50 border-2 border-dashed border-slate-100 rounded-[2.5rem] text-slate-300 text-xs font-bold uppercase tracking-widest">等候点亮记录</div>
                             ) : (
                                 history.slice(0, 5).map((h, i) => (
-                                    <div key={i} className="bg-white p-5 rounded-[2rem] shadow-sm flex items-center justify-between border border-transparent animate-fade-in">
+                                    <div key={i} className="bg-white p-5 rounded-[2rem] shadow-sm flex items-center justify-between border border-transparent animate-fade-in group">
                                         <div className="flex items-center gap-4">
                                             <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-500 font-black text-sm">+{h.pts}</div>
                                             <div>
@@ -1358,6 +1385,16 @@
                                                 <div className="text-[10px] font-bold text-slate-400 uppercase mt-1">{h.dimName} · {h.dateStr}</div>
                                             </div>
                                         </div>
+                                        <button
+                                            onClick={() => {
+                                                setEditingRecordIdx(i);
+                                                setModalType('record');
+                                            }}
+                                            className="p-2.5 rounded-xl bg-slate-50 text-slate-400 hover:bg-sky-50 hover:text-sky-500 transition-all opacity-0 group-hover:opacity-100"
+                                            aria-label="编辑记录"
+                                        >
+                                            <Icon name="edit" size={16} />
+                                        </button>
                                     </div>
                                 ))
                             )}
@@ -1367,10 +1404,16 @@
                     {/* Modals */}
                     {modalType === 'record' && (
                         <RecordModal
-                            dimName={dimensions[selectedDimIdx]?.name}
-                            onClose={() => setModalType(null)}
+                            dimName={editingRecordIdx !== null ? history[editingRecordIdx]?.dimName : dimensions[selectedDimIdx]?.name}
+                            onClose={() => {
+                                setModalType(null);
+                                setEditingRecordIdx(null);
+                            }}
                             onConfirm={handleRecordConfirm}
                             history={history}
+                            initialText={editingRecordIdx !== null ? history[editingRecordIdx]?.text : ""}
+                            initialTags={editingRecordIdx !== null ? (history[editingRecordIdx]?.tags || []) : []}
+                            isEdit={editingRecordIdx !== null}
                         />
                     )}
 
