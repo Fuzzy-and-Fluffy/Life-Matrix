@@ -6,6 +6,8 @@
 
 LifeMatrix 是一款基于"无限游戏"理念的个人成长追踪应用。采用 RPG 游戏化的数值反馈系统，通过极大化的雷达图直观展示用户在身心健康、事业、财务等维度的进化轨迹。
 
+**🌐 在线体验**: [lifematrix.vercel.app](https://lifematrix.vercel.app)
+
 ## 核心功能
 
 - 🎯 **多维度雷达图** - 直观展示各领域发展状态
@@ -18,8 +20,9 @@ LifeMatrix 是一款基于"无限游戏"理念的个人成长追踪应用。采�
 
 ## 快速开始
 
-1. 直接用浏览器打开 `index.html`
-2. 或部署到任意静态服务器
+1. 访问 [lifematrix.vercel.app](https://lifematrix.vercel.app)
+2. 使用 Google 或邮箱注册/登录
+3. 开始记录你的人生进化之旅
 
 ## 技术栈
 

@@ -26,6 +26,10 @@ git push origin main
 | **Netlify** | 免费 | 表单处理，函数支持 |
 | **Cloudflare Pages** | 免费 | 全球 CDN，性能优 |
 
+## 当前部署
+
+**生产环境**: [lifematrix.vercel.app](https://lifematrix.vercel.app)
+
 ---
 
 ## 上线前检查清单
@@ -33,17 +37,20 @@ git push origin main
 - [x] `manifest.json` 配置完整
 - [x] `sw.js` Service Worker 正常
 - [x] `icon-192.png` 和 `icon-512.png` 已准备
-- [ ] Firebase 域名白名单配置
-- [ ] HTTPS 启用（GitHub Pages 自动提供）
+- [x] Firebase 域名白名单配置
+- [x] HTTPS 启用
 
 ---
 
-## Firebase 配置步骤
+## Firebase 配置
 
-1. 进入 [Firebase Console](https://console.firebase.google.com/)
-2. 选择项目 → Authentication → Settings
-3. **授权域名**: 添加 `[用户名].github.io`
-4. **API 限制**: Google Cloud Console → 限制 Referrer
+**项目 ID**: `life-matrix-c6b45`
+
+**授权域名**:
+- `localhost`
+- `life-matrix-c6b45.firebaseapp.com`
+- `life-matrix-c6b45.web.app`
+- `lifematrix.vercel.app` ✅
 
 ---
 
