@@ -185,16 +185,27 @@
             const activeDims = (dimensions || []).filter(d => d.active);
             if (activeDims.length < 3) return null;
 
-            // Increased viewBox height and shifted center up for better bottom label spacing
-            const viewBoxHeight = size + 50;
-            const centerX = size / 2;
-            const centerY = size / 2 - 10;
+            // Increased viewBox for better label spacing on all sides
+            const viewBoxWidth = size + 60;
+            const viewBoxHeight = size + 80;
+            const centerX = viewBoxWidth / 2;
+            const centerY = size / 2;
             const radius = 125;
-            const labelDist = 150;
+            const baseLabelDist = 155;
 
-            const getPos = (i, total, r) => {
+            const getPos = (i, total, r, isLabel = false) => {
                 const angle = (i * 2 * Math.PI) / total - Math.PI / 2;
-                return { x: centerX + r * Math.cos(angle), y: centerY + r * Math.sin(angle), angle };
+                // For labels, add extra distance for bottom labels (where sin is positive)
+                // This accounts for the label text block extending downward
+                let adjustedR = r;
+                if (isLabel) {
+                    const sin = Math.sin(angle);
+                    // Bottom labels need more space (text extends downward ~25px)
+                    if (sin > 0.3) {
+                        adjustedR = r + sin * 25;
+                    }
+                }
+                return { x: centerX + adjustedR * Math.cos(angle), y: centerY + adjustedR * Math.sin(angle), angle };
             };
 
             const polyPoints = activeDims.map((dim, i) => {
@@ -207,14 +218,14 @@
 
             return (
                 <div className="w-full flex justify-center items-center overflow-visible">
-                    <svg width="100%" height="100%" viewBox={`0 0 ${size} ${viewBoxHeight}`} className="overflow-visible select-none max-w-[420px]">
+                    <svg width="100%" height="100%" viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`} className="overflow-visible select-none max-w-[460px]">
                         {[1, 0.75, 0.5, 0.25].map(s => (
                             <circle key={s} cx={centerX} cy={centerY} r={radius * s} fill="none" stroke="#f1f5f9" strokeWidth={s === 1 ? "2.5" : "1.5"} />
                         ))}
 
                         {activeDims.map((dim, i) => {
                             const axisPos = getPos(i, activeDims.length, radius);
-                            const labelPos = getPos(i, activeDims.length, labelDist);
+                            const labelPos = getPos(i, activeDims.length, baseLabelDist, true);
 
                             const idx = dimensions.findIndex(d => d.id === dim.id);
                             const score = (scores && scores[idx]) ? scores[idx] : 0;
