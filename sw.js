@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lifematrix-v3.4';
+const CACHE_NAME = 'lifematrix-v3.6';
 const ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (e) => {
@@ -11,5 +11,5 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || !e.request.url.startsWith('http')) return;
-  e.respondWith(fetch(e.request).then(r => { if (r.status === 200) { caches.open(CACHE_NAME).then(c => c.put(e.request, r.clone())); } return r; }).catch(() => caches.match(e.request).then(c => c || (e.request.mode === 'navigate' ? caches.match('./index.html') : new Response('Offline', {status: 503})))));
+  e.respondWith(fetch(e.request).then(r => { if (r.status === 200) { caches.open(CACHE_NAME).then(c => c.put(e.request, r.clone())); } return r; }).catch(() => caches.match(e.request).then(c => c || (e.request.mode === 'navigate' ? caches.match('./index.html') : new Response('Offline', { status: 503 })))));
 });
