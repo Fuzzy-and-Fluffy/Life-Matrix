@@ -128,7 +128,10 @@
                 cloud: <g><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" /></g>,
                 cloudOff: <g><path d="m2 2 20 20" /><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193" /><path d="M21.532 16.532A4.5 4.5 0 0 0 17.5 10h-1.79a7 7 0 0 0-1.926-3.535" /></g>,
                 google: <g><path d="M12.545 10.239v3.821h5.445c-.712 2.315-2.647 3.972-5.445 3.972a6.033 6.033 0 1 1 0-12.064c1.498 0 2.866.549 3.921 1.453l2.814-2.814A9.969 9.969 0 0 0 12.545 2C7.021 2 2.543 6.477 2.543 12s4.478 10 10.002 10c8.396 0 10.249-7.85 9.426-11.748l-9.426-.013z" fill="currentColor" stroke="none" /></g>,
-                logout: <g><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></g>
+                logout: <g><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></g>,
+                edit: <g><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" /></g>,
+                trash: <g><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></g>,
+                folder: <g><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></g>
             };
             return (
                 <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -311,8 +314,20 @@
             );
         };
 
-        const SettingsModal = ({ onClose, onExportJSON, onExportCSV, onImport }) => {
+        const SettingsModal = ({
+            onClose, onExportJSON, onExportCSV, onImport,
+            name, avatar, dimensions, onSave
+        }) => {
+            const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'dimensions' | 'data'
+            const [tempName, setTempName] = useState(name || '');
+            const [tempAvatar, setTempAvatar] = useState(avatar);
+            const [tempDimensions, setTempDimensions] = useState(dimensions || []);
+            const [customDimName, setCustomDimName] = useState('');
+            const [hasChanges, setHasChanges] = useState(false);
+
             const fileInput = useRef(null);
+            const avatarInput = useRef(null);
+
             const handleFileChange = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -320,31 +335,213 @@
                 reader.onload = (ev) => onImport(ev.target.result);
                 reader.readAsText(file);
             };
+
+            const handleAvatarChange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 150; canvas.height = 150;
+                        canvas.getContext('2d').drawImage(img, 0, 0, 150, 150);
+                        setTempAvatar(canvas.toDataURL('image/jpeg', 0.8));
+                        setHasChanges(true);
+                    };
+                    img.src = ev.target.result;
+                };
+                reader.readAsDataURL(file);
+            };
+
+            const handleSave = () => {
+                onSave(tempName, tempAvatar, tempDimensions);
+                setHasChanges(false);
+                onClose();
+            };
+
+            const updateDimName = (idx, newName) => {
+                const newDims = [...tempDimensions];
+                newDims[idx].name = newName;
+                setTempDimensions(newDims);
+                setHasChanges(true);
+            };
+
+            const toggleDimActive = (idx) => {
+                const activeCount = tempDimensions.filter(d => d.active).length;
+                if (tempDimensions[idx].active && activeCount <= 3) return;
+                const newDims = [...tempDimensions];
+                newDims[idx].active = !newDims[idx].active;
+                setTempDimensions(newDims);
+                setHasChanges(true);
+            };
+
+            const addCustomDim = () => {
+                if (!customDimName.trim() || tempDimensions.length >= 12) return;
+                const newDims = [...tempDimensions, {
+                    id: `c_${Date.now()}`,
+                    name: customDimName,
+                    active: true,
+                    color: "bg-slate-400",
+                    text: "text-slate-400",
+                    border: "border-slate-200"
+                }];
+                setTempDimensions(newDims);
+                setCustomDimName('');
+                setHasChanges(true);
+            };
+
+            const TabButton = ({ id, label }) => (
+                <button
+                    onClick={() => setActiveTab(id)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === id
+                        ? 'bg-slate-900 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
+                        }`}
+                >
+                    {label}
+                </button>
+            );
+
             return (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-6 z-50 animate-fade-in">
-                    <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl flex flex-col gap-5">
-                        <div className="flex justify-between items-center mb-2">
-                            <h3 className="text-xl font-black text-slate-800">数据管理</h3>
-                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><Icon name="close" /></button>
-                        </div>
-                        <div className="space-y-3">
-                            <button onClick={onExportCSV} className="w-full bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 py-4 rounded-2xl flex items-center justify-center gap-3 transition-all group">
-                                <span className="p-1.5 bg-white rounded-full shadow-sm text-emerald-500 group-hover:scale-110 transition-transform"><Icon name="table" size={16} /></span>
-                                <span className="font-bold text-xs text-emerald-700">导出为 Excel (CSV)</span>
-                            </button>
-                            <button onClick={onExportJSON} className="w-full bg-slate-50 border border-slate-100 hover:bg-slate-100 py-4 rounded-2xl flex items-center justify-center gap-3 transition-all group">
-                                <span className="p-1.5 bg-white rounded-full shadow-sm text-sky-500 group-hover:scale-110 transition-transform"><Icon name="download" size={16} /></span>
-                                <span className="font-bold text-xs text-slate-600">备份存档 (JSON)</span>
-                            </button>
-                            <div className="relative">
-                                <input type="file" accept=".json" ref={fileInput} className="hidden" onChange={handleFileChange} />
-                                <button onClick={() => fileInput.current.click()} className="w-full bg-slate-50 border border-slate-100 hover:bg-slate-100 py-4 rounded-2xl flex items-center justify-center gap-3 transition-all group">
-                                    <span className="p-1.5 bg-white rounded-full shadow-sm text-purple-500 group-hover:scale-110 transition-transform"><Icon name="fast" size={16} /></span>
-                                    <span className="font-bold text-xs text-slate-600">恢复存档</span>
-                                </button>
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fade-in">
+                    <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+                        {/* Header */}
+                        <div className="p-6 pb-4 border-b border-slate-100">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-xl font-black text-slate-800">设置</h3>
+                                <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><Icon name="close" /></button>
+                            </div>
+                            {/* Tabs */}
+                            <div className="flex gap-2">
+                                <TabButton id="profile" label="个人资料" />
+                                <TabButton id="dimensions" label="维度管理" />
+                                <TabButton id="data" label="数据" />
                             </div>
                         </div>
-                        <p className="text-[9px] text-center text-slate-300 mt-2">LifeMatrix v3.4</p>
+
+                        {/* Content */}
+                        <div className="flex-1 overflow-y-auto p-6 no-scrollbar">
+                            {activeTab === 'profile' && (
+                                <div className="space-y-6">
+                                    {/* Avatar */}
+                                    <div className="flex flex-col items-center">
+                                        <div
+                                            className="relative cursor-pointer group mb-4"
+                                            onClick={() => avatarInput.current.click()}
+                                        >
+                                            <div className={`w-24 h-24 rounded-[2rem] flex items-center justify-center overflow-hidden transition-all border-2 ${tempAvatar ? 'border-sky-100 shadow-xl' : 'bg-slate-50 border-dashed border-slate-200 group-hover:border-sky-300'
+                                                }`}>
+                                                {tempAvatar
+                                                    ? <img src={tempAvatar} className="w-full h-full object-cover" />
+                                                    : <Icon name="user" size={32} className="text-slate-300" />
+                                                }
+                                            </div>
+                                            <div className="absolute -bottom-1 -right-1 bg-white p-2 rounded-xl shadow border border-slate-50 text-slate-400 group-hover:text-sky-500 transition-colors">
+                                                <Icon name="camera" size={14} />
+                                            </div>
+                                            <input type="file" ref={avatarInput} className="hidden" accept="image/*" onChange={handleAvatarChange} />
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 font-bold">点击更换头像</p>
+                                    </div>
+
+                                    {/* Name */}
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">用户名</label>
+                                        <input
+                                            type="text"
+                                            value={tempName}
+                                            onChange={e => { setTempName(e.target.value); setHasChanges(true); }}
+                                            placeholder="输入你的昵称"
+                                            className="w-full bg-slate-50 rounded-2xl px-5 py-4 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-sky-100 transition-all"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'dimensions' && (
+                                <div className="space-y-4">
+                                    <p className="text-[10px] font-bold text-slate-400 mb-4">编辑维度名称，点击右侧按钮启用/禁用（至少保留3个）</p>
+                                    <div className="space-y-2">
+                                        {tempDimensions.map((dim, idx) => (
+                                            <div key={dim.id} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${dim.active ? 'bg-slate-50 border-slate-100' : 'opacity-40 border-transparent'
+                                                }`}>
+                                                <div className={`w-3 h-3 rounded-full ${dim.color}`}></div>
+                                                <input
+                                                    type="text"
+                                                    value={dim.name}
+                                                    onChange={e => updateDimName(idx, e.target.value)}
+                                                    className="flex-1 bg-transparent border-none p-0 focus:ring-0 font-bold text-sm text-slate-700 outline-none"
+                                                />
+                                                <button
+                                                    onClick={() => toggleDimActive(idx)}
+                                                    className={`shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all ${dim.active
+                                                        ? 'bg-sky-500 text-white shadow-md'
+                                                        : 'bg-white border border-slate-200 text-slate-300'
+                                                        }`}
+                                                >
+                                                    {dim.active ? <Icon name="check" size={14} /> : <Icon name="plus" size={14} />}
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Add new dimension */}
+                                    {tempDimensions.length < 12 && (
+                                        <div className="flex gap-2 mt-4">
+                                            <input
+                                                type="text"
+                                                value={customDimName}
+                                                onChange={e => setCustomDimName(e.target.value)}
+                                                placeholder="添加新维度..."
+                                                className="flex-1 bg-slate-50 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:ring-2 focus:ring-sky-100"
+                                                onKeyDown={e => e.key === 'Enter' && addCustomDim()}
+                                            />
+                                            <button
+                                                onClick={addCustomDim}
+                                                className="bg-slate-900 text-white w-10 rounded-xl flex items-center justify-center shadow-lg"
+                                            >
+                                                <Icon name="plus" size={16} />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {activeTab === 'data' && (
+                                <div className="space-y-3">
+                                    <button onClick={onExportCSV} className="w-full bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 py-4 rounded-2xl flex items-center justify-center gap-3 transition-all group">
+                                        <span className="p-1.5 bg-white rounded-full shadow-sm text-emerald-500 group-hover:scale-110 transition-transform"><Icon name="table" size={16} /></span>
+                                        <span className="font-bold text-xs text-emerald-700">导出为 Excel (CSV)</span>
+                                    </button>
+                                    <button onClick={onExportJSON} className="w-full bg-slate-50 border border-slate-100 hover:bg-slate-100 py-4 rounded-2xl flex items-center justify-center gap-3 transition-all group">
+                                        <span className="p-1.5 bg-white rounded-full shadow-sm text-sky-500 group-hover:scale-110 transition-transform"><Icon name="download" size={16} /></span>
+                                        <span className="font-bold text-xs text-slate-600">备份存档 (JSON)</span>
+                                    </button>
+                                    <div className="relative">
+                                        <input type="file" accept=".json" ref={fileInput} className="hidden" onChange={handleFileChange} />
+                                        <button onClick={() => fileInput.current.click()} className="w-full bg-slate-50 border border-slate-100 hover:bg-slate-100 py-4 rounded-2xl flex items-center justify-center gap-3 transition-all group">
+                                            <span className="p-1.5 bg-white rounded-full shadow-sm text-purple-500 group-hover:scale-110 transition-transform"><Icon name="fast" size={16} /></span>
+                                            <span className="font-bold text-xs text-slate-600">恢复存档</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-6 pt-4 border-t border-slate-100">
+                            {(activeTab === 'profile' || activeTab === 'dimensions') && hasChanges ? (
+                                <button
+                                    onClick={handleSave}
+                                    className="w-full bg-sky-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-sky-100 hover:bg-sky-400 active:scale-95 transition-all"
+                                >
+                                    保存更改
+                                </button>
+                            ) : (
+                                <p className="text-[9px] text-center text-slate-300">LifeMatrix v3.5</p>
+                            )}
+                        </div>
                     </div>
                 </div>
             );
@@ -457,7 +654,6 @@
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(async (user) => {
                     setCurrentUser(user);
-                    setAuthLoading(false);
 
                     if (user) {
                         // 用户已登录，从 Firestore 加载数据
@@ -466,6 +662,8 @@
                         // 用户未登录，从 localStorage 加载
                         loadFromLocalStorage();
                     }
+                    // 数据加载完成后再关闭loading状态
+                    setAuthLoading(false);
                 });
                 return () => unsubscribe();
             }, []);
@@ -1038,6 +1236,15 @@
                             onExportJSON={handleExportJSON}
                             onExportCSV={handleExportCSV}
                             onImport={handleImport}
+                            name={name}
+                            avatar={avatar}
+                            dimensions={dimensions}
+                            onSave={(newName, newAvatar, newDims) => {
+                                if (newName !== undefined) setName(newName);
+                                if (newAvatar !== undefined) setAvatar(newAvatar);
+                                if (newDims) setDimensions(newDims);
+                                saveData(null, null, newDims, newName, newAvatar);
+                            }}
                         />
                     )}
 
