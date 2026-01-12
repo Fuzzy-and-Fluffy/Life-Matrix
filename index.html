@@ -308,7 +308,7 @@
             );
         };
 
-        const RecordModal = ({ dimName, onClose, onConfirm, history, systemTags = [], currentDimId, initialText = "", initialTags = [], isEdit = false }) => {
+        const RecordModal = ({ dimName, onClose, onConfirm, history, systemTags = [], recentTags = [], currentDimId, initialText = "", initialTags = [], isEdit = false }) => {
             const [text, setText] = useState(initialText);
             const [tags, setTags] = useState(initialTags);
             const [tagInput, setTagInput] = useState("");
@@ -328,10 +328,18 @@
                     .slice(0, 10);
             }, [history, dimName]);
 
-            // Get system tags applicable to this dimension
+            // 智能标签建议：优先显示最近使用的标签，不足10个时补充系统标签
             const existingTags = useMemo(() => {
-                if (!systemTags || systemTags.length === 0) return [];
-                return systemTags
+                // 1. 获取最近使用的标签（最多10个）
+                const recent = recentTags || [];
+
+                // 2. 如果最近使用的标签已经足够，直接返回
+                if (recent.length >= 10) {
+                    return recent.slice(0, 10);
+                }
+
+                // 3. 不足10个时，从系统标签中补充（排除已在recent中的）
+                const systemTagNames = (systemTags || [])
                     .filter(tag => {
                         // 如果标签没有指定维度（appliesTo为空），则应用到所有维度
                         if (!tag.appliesTo || tag.appliesTo.length === 0) return true;
@@ -339,8 +347,11 @@
                         return tag.appliesTo.includes(currentDimId);
                     })
                     .map(tag => tag.name)
-                    .filter(name => name && name.trim().length > 0);
-            }, [systemTags, currentDimId]);
+                    .filter(name => name && name.trim().length > 0 && !recent.includes(name));
+
+                // 4. 合并最近使用的和系统标签，最多10个
+                return [...recent, ...systemTagNames].slice(0, 10);
+            }, [systemTags, recentTags, currentDimId]);
 
             const addTag = (tag) => {
                 const cleaned = tag.replace(/^#/, '').trim();
@@ -362,7 +373,13 @@
             };
 
             const handleConfirm = () => {
-                onConfirm(text, tags);
+                // 从文本中解析【】标签
+                const parsedTags = parseTagsFromText(text);
+
+                // 合并手动添加的标签和解析出的标签（去重）
+                const allTags = [...new Set([...tags, ...parsedTags])];
+
+                onConfirm(text, allTags);
             };
 
             return (
@@ -895,6 +912,40 @@
             { id: 'tag_2', name: '里程碑', appliesTo: [] }
         ];
 
+        // 从文本中解析【】标签
+        const parseTagsFromText = (text) => {
+            if (!text) return [];
+            const regex = /【([^】]+)】/g;
+            const matches = [];
+            let match;
+            while ((match = regex.exec(text)) !== null) {
+                const tag = match[1].trim();
+                if (tag && !matches.includes(tag)) {
+                    matches.push(tag);
+                }
+            }
+            return matches;
+        };
+
+        // 更新最近使用的标签列表（保持最新的10个）
+        const updateRecentTags = (currentRecentTags, newTags) => {
+            if (!newTags || newTags.length === 0) return currentRecentTags;
+
+            const updated = [...currentRecentTags];
+            newTags.forEach(tag => {
+                // 移除已存在的
+                const index = updated.indexOf(tag);
+                if (index > -1) {
+                    updated.splice(index, 1);
+                }
+                // 添加到开头
+                updated.unshift(tag);
+            });
+
+            // 只保留前10个
+            return updated.slice(0, 10);
+        };
+
         const App = () => {
             const [step, setStep] = useState(1);
             const [name, setName] = useState("");
@@ -903,6 +954,7 @@
             const [scores, setScores] = useState([]);
             const [history, setHistory] = useState([]);
             const [systemTags, setSystemTags] = useState(INITIAL_SYSTEM_TAGS);
+            const [recentTags, setRecentTags] = useState([]); // 最近使用的标签历史（最多10个）
 
             // Firebase Auth State
             const [currentUser, setCurrentUser] = useState(null);
@@ -951,6 +1003,7 @@
                             if (data.scores) setScores(data.scores);
                             if (data.history) setHistory(data.history);
                             if (data.systemTags) setSystemTags(data.systemTags);
+                            if (data.recentTags) setRecentTags(data.recentTags);
                             if (data.name && data.scores && data.scores.length > 0) {
                                 setStep(4);
                             }
@@ -975,6 +1028,7 @@
                         if (data.scores) setScores(data.scores);
                         if (data.history) setHistory(data.history);
                         if (data.systemTags) setSystemTags(data.systemTags);
+                        if (data.recentTags) setRecentTags(data.recentTags);
                         if (data.name && data.scores && data.scores.length > 0) {
                             setStep(4);
                         }
@@ -993,7 +1047,7 @@
             };
 
             // --- 保存数据 ---
-            const saveData = async (newScores, newHistory, newDims, newName, newAvatar, newSystemTags) => {
+            const saveData = async (newScores, newHistory, newDims, newName, newAvatar, newSystemTags, newRecentTags) => {
                 const data = {
                     name: newName !== undefined ? newName : name,
                     avatar: newAvatar !== undefined ? newAvatar : avatar,
@@ -1001,6 +1055,7 @@
                     scores: newScores || scores,
                     history: newHistory || history,
                     systemTags: newSystemTags || systemTags,
+                    recentTags: newRecentTags !== undefined ? newRecentTags : recentTags,
                     updatedAt: new Date().toISOString()
                 };
 
@@ -1212,11 +1267,16 @@
                 };
 
                 const newHistory = [entry, ...(history || [])].slice(0, 100);
+
+                // 更新最近使用的标签
+                const newRecentTags = updateRecentTags(recentTags, tags);
+                setRecentTags(newRecentTags);
+
                 setScores(newScores);
                 setHistory(newHistory);
                 setModalType(null);
                 setEditingRecordIdx(null);
-                saveData(newScores, newHistory, null);
+                saveData(newScores, newHistory, null, undefined, undefined, undefined, newRecentTags);
             };
 
             const handleRecordEdit = (text, tags = []) => {
@@ -1230,10 +1290,15 @@
                         text: text,
                         tags: tags
                     };
+
+                    // 更新最近使用的标签
+                    const newRecentTags = updateRecentTags(recentTags, tags);
+                    setRecentTags(newRecentTags);
+
                     setHistory(newHistory);
                     setModalType(null);
                     setEditingRecordIdx(null);
-                    saveData(null, newHistory, null);
+                    saveData(null, newHistory, null, undefined, undefined, undefined, newRecentTags);
                 }
             };
 
@@ -1543,6 +1608,7 @@
                             onConfirm={handleRecordConfirm}
                             history={history}
                             systemTags={systemTags}
+                            recentTags={recentTags}
                             initialText={editingRecordIdx !== null ? history[editingRecordIdx]?.text : ""}
                             initialTags={editingRecordIdx !== null ? (history[editingRecordIdx]?.tags || []) : []}
                             isEdit={editingRecordIdx !== null}
