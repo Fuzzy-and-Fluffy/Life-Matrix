@@ -373,13 +373,17 @@
             };
 
             const handleConfirm = () => {
-                // 从文本中解析【】标签
-                const parsedTags = parseTagsFromText(text);
+                // 1. 统一标签格式：将 #标签 和 [标签] 转换为【标签】
+                const normalizedText = normalizeTagsInText(text);
 
-                // 合并手动添加的标签和解析出的标签（去重）
+                // 2. 从转换后的文本中解析所有标签
+                const parsedTags = parseTagsFromText(normalizedText);
+
+                // 3. 合并手动添加的标签和解析出的标签（去重）
                 const allTags = [...new Set([...tags, ...parsedTags])];
 
-                onConfirm(text, allTags);
+                // 4. 提交时使用格式统一后的文本
+                onConfirm(normalizedText, allTags);
             };
 
             return (
@@ -912,19 +916,55 @@
             { id: 'tag_2', name: '里程碑', appliesTo: [] }
         ];
 
-        // 从文本中解析【】标签
+        // 从文本中解析所有格式的标签：【】、[]、#
         const parseTagsFromText = (text) => {
             if (!text) return [];
-            const regex = /【([^】]+)】/g;
             const matches = [];
+
+            // 1. 解析【】格式
+            const regex1 = /【([^】]+)】/g;
             let match;
-            while ((match = regex.exec(text)) !== null) {
+            while ((match = regex1.exec(text)) !== null) {
                 const tag = match[1].trim();
                 if (tag && !matches.includes(tag)) {
                     matches.push(tag);
                 }
             }
+
+            // 2. 解析[]格式
+            const regex2 = /\[([^\]]+)\]/g;
+            while ((match = regex2.exec(text)) !== null) {
+                const tag = match[1].trim();
+                if (tag && !matches.includes(tag)) {
+                    matches.push(tag);
+                }
+            }
+
+            // 3. 解析#标签格式（#后面跟非空白字符，直到遇到空白、标点或字符串结束）
+            const regex3 = /#([^\s#\[\]【】\,\.。，！？\!\?]+)/g;
+            while ((match = regex3.exec(text)) !== null) {
+                const tag = match[1].trim();
+                if (tag && !matches.includes(tag)) {
+                    matches.push(tag);
+                }
+            }
+
             return matches;
+        };
+
+        // 统一标签格式：将文本中的 #标签 和 [标签] 转换为【标签】
+        const normalizeTagsInText = (text) => {
+            if (!text) return text;
+
+            let normalized = text;
+
+            // 1. 将 [标签] 转换为【标签】
+            normalized = normalized.replace(/\[([^\]]+)\]/g, '【$1】');
+
+            // 2. 将 #标签 转换为【标签】
+            normalized = normalized.replace(/#([^\s#\[\]【】\,\.。，！？\!\?]+)/g, '【$1】');
+
+            return normalized;
         };
 
         // 更新最近使用的标签列表（保持最新的10个）
