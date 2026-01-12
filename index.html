@@ -1346,10 +1346,10 @@
             const handleRecordConfirm = (text) => {
                 if (!text || !text.trim()) return;
 
-                // Extract tags from inline text using 【】, [], or ## patterns
-                const tagRegex = /【([^】]+)】|\[([^\]]+)\]|##([^#]+)##/g;
+                // Extract tags from inline text using 【】, [], or # patterns
+                const tagRegex = /【([^】]+)】|\[([^\]]+)\]|#([^#]+)#/g;
                 const extractedTags = [...new Set(Array.from(text.matchAll(tagRegex)).map(match => {
-                    // match[1] = 【】, match[2] = [], match[3] = ##
+                    // match[1] = 【】, match[2] = [], match[3] = #
                     return (match[1] || match[2] || match[3]).trim();
                 }))];
 
