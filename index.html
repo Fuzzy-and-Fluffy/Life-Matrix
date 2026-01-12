@@ -313,6 +313,12 @@
             const [tags, setTags] = useState(initialTags);
             const [tagInput, setTagInput] = useState("");
 
+            // 当 initialText 或 initialTags 改变时，更新状态
+            useEffect(() => {
+                setText(initialText);
+                setTags(initialTags);
+            }, [initialText, initialTags]);
+
             const suggestions = useMemo(() => {
                 if (!history) return [];
                 return history
