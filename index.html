@@ -310,14 +310,16 @@
 
         const RecordModal = ({ dimName, onClose, onConfirm, history, systemTags = [], currentDimId, initialText = "", initialTags = [], isEdit = false }) => {
             const [text, setText] = useState(initialText);
-            const [tags, setTags] = useState(initialTags);
+            const [tags, setTags] = useState(Array.isArray(initialTags) ? initialTags : []);
             const [tagInput, setTagInput] = useState("");
 
             // 当 initialText 或 initialTags 改变时，更新状态
             useEffect(() => {
+                console.log('RecordModal useEffect triggered:', { initialText, initialTags, isEdit });
                 setText(initialText);
-                setTags(initialTags);
-            }, [initialText, initialTags]);
+                const tagsArray = Array.isArray(initialTags) ? initialTags : [];
+                setTags([...tagsArray]);
+            }, [initialText, JSON.stringify(initialTags), isEdit]);
 
             const suggestions = useMemo(() => {
                 if (!history) return [];
@@ -1224,12 +1226,14 @@
 
                 const newHistory = [...(history || [])];
                 if (editingRecordIdx < newHistory.length) {
+                    console.log('Editing record:', { text, tags, editingRecordIdx, oldRecord: newHistory[editingRecordIdx] });
                     // 更新记录，保留原有的其他字段
                     newHistory[editingRecordIdx] = {
                         ...newHistory[editingRecordIdx],
                         text: text,
                         tags: tags
                     };
+                    console.log('Updated record:', newHistory[editingRecordIdx]);
                     setHistory(newHistory);
                     setModalType(null);
                     setEditingRecordIdx(null);
@@ -1530,24 +1534,31 @@
                     </div>
 
                     {/* Modals */}
-                    {modalType === 'record' && (
-                        <RecordModal
-                            dimName={editingRecordIdx !== null ? history[editingRecordIdx]?.dimName : dimensions[selectedDimIdx]?.name}
-                            currentDimId={editingRecordIdx !== null
-                                ? dimensions.find(d => d.name === history[editingRecordIdx]?.dimName)?.id
-                                : dimensions[selectedDimIdx]?.id}
-                            onClose={() => {
-                                setModalType(null);
-                                setEditingRecordIdx(null);
-                            }}
-                            onConfirm={handleRecordConfirm}
-                            history={history}
-                            systemTags={systemTags}
-                            initialText={editingRecordIdx !== null ? history[editingRecordIdx]?.text : ""}
-                            initialTags={editingRecordIdx !== null ? (history[editingRecordIdx]?.tags || []) : []}
-                            isEdit={editingRecordIdx !== null}
-                        />
-                    )}
+                    {modalType === 'record' && (() => {
+                        const isEditing = editingRecordIdx !== null;
+                        const record = isEditing ? history[editingRecordIdx] : null;
+                        if (isEditing) {
+                            console.log('Opening RecordModal in edit mode:', { editingRecordIdx, record });
+                        }
+                        return (
+                            <RecordModal
+                                dimName={isEditing ? record?.dimName : dimensions[selectedDimIdx]?.name}
+                                currentDimId={isEditing
+                                    ? dimensions.find(d => d.name === record?.dimName)?.id
+                                    : dimensions[selectedDimIdx]?.id}
+                                onClose={() => {
+                                    setModalType(null);
+                                    setEditingRecordIdx(null);
+                                }}
+                                onConfirm={handleRecordConfirm}
+                                history={history}
+                                systemTags={systemTags}
+                                initialText={isEditing ? (record?.text || "") : ""}
+                                initialTags={isEditing ? (record?.tags || []) : []}
+                                isEdit={isEditing}
+                            />
+                        );
+                    })()}
 
                     {modalType === 'calendar' && (
                         <MonthlyHistoryModal
