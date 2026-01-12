@@ -1653,7 +1653,7 @@
                     </header>
 
                     {/* Main Radar Card */}
-                    <div className="w-full max-w-4xl bg-white rounded-[4rem] p-8 shadow-xl shadow-slate-200/50 flex flex-col items-center mb-10 relative overflow-visible min-h-[480px] justify-center">
+                    <div className="w-full max-w-4xl bg-white rounded-[4rem] p-4 md:p-8 shadow-xl shadow-slate-200/50 flex flex-col items-center mb-10 relative overflow-visible min-h-[480px] md:min-h-[520px] justify-center">
                         <RadarChart
                             dimensions={dimensions}
                             scores={scores}
@@ -1662,7 +1662,7 @@
                                 setEditingRecordIdx(null); // 重置编辑状态
                                 setModalType('record');
                             }}
-                            size={400}
+                            size={480}
                         />
                         <div className="mt-4 text-[10px] font-black text-slate-300 uppercase tracking-[0.4em] animate-pulse">
                             Tap labels to record progress
