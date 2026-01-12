@@ -1341,13 +1341,30 @@
             const handleRecordConfirm = (text) => {
                 if (!text || !text.trim()) return;
 
-                // Extract tags from inline text using 【】 pattern
-                const tagRegex = /【([^】]+)】/g;
-                const extractedTags = [...new Set(Array.from(text.matchAll(tagRegex)).map(match => match[1].trim()))];
+                // Extract tags from inline text using 【】, [], or ## patterns
+                const tagRegex = /【([^】]+)】|\[([^\]]+)\]|##([^#]+)##/g;
+                const extractedTags = [...new Set(Array.from(text.matchAll(tagRegex)).map(match => {
+                    // match[1] = 【】, match[2] = [], match[3] = ##
+                    return (match[1] || match[2] || match[3]).trim();
+                }))];
+
+                // Sync extracted tags to systemTags (add new tags if they don't exist)
+                let updatedSystemTags = [...systemTags];
+                extractedTags.forEach(tagName => {
+                    const tagExists = systemTags.some(t => t.name === tagName);
+                    if (!tagExists) {
+                        const newTag = {
+                            id: `tag_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                            name: tagName,
+                            appliesTo: [] // Empty array means applies to all dimensions
+                        };
+                        updatedSystemTags.push(newTag);
+                    }
+                });
 
                 // 如果是编辑模式，调用编辑函数
                 if (editingRecordIdx !== null) {
-                    handleRecordEdit(text, extractedTags);
+                    handleRecordEdit(text, extractedTags, updatedSystemTags);
                     return;
                 }
 
@@ -1370,12 +1387,13 @@
                 const newHistory = [entry, ...(history || [])].slice(0, 100);
                 setScores(newScores);
                 setHistory(newHistory);
+                setSystemTags(updatedSystemTags);
                 setModalType(null);
                 setEditingRecordIdx(null);
-                saveData(newScores, newHistory, null);
+                saveData(newScores, newHistory, null, undefined, undefined, updatedSystemTags);
             };
 
-            const handleRecordEdit = (text, tags = []) => {
+            const handleRecordEdit = (text, tags = [], updatedSystemTags = null) => {
                 if (!text || !text.trim() || editingRecordIdx === null) return;
 
                 const newHistory = [...(history || [])];
@@ -1387,9 +1405,12 @@
                         tags: tags
                     };
                     setHistory(newHistory);
+                    if (updatedSystemTags) {
+                        setSystemTags(updatedSystemTags);
+                    }
                     setModalType(null);
                     setEditingRecordIdx(null);
-                    saveData(null, newHistory, null);
+                    saveData(null, newHistory, null, undefined, undefined, updatedSystemTags);
                 }
             };
 
