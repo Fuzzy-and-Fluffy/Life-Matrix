@@ -308,7 +308,7 @@
             );
         };
 
-        const RecordModal = ({ dimName, onClose, onConfirm, history, systemTags = [], currentDimId, initialText = "", initialTags = [], isEdit = false }) => {
+        const RecordModal = ({ dimName, onClose, onConfirm, onDelete, history, systemTags = [], currentDimId, initialText = "", initialTags = [], isEdit = false }) => {
             const [text, setText] = useState(initialText);
             const inputRef = useRef(null);
 
@@ -435,6 +435,9 @@
                         </div>
                         <div className="flex flex-col gap-3 mt-2">
                             <button onClick={handleConfirm} className="w-full bg-sky-600 text-white py-4.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-sky-100 hover:bg-sky-500 active:scale-95 transition-all">{isEdit ? '保存更改' : '确认进度'}</button>
+                            {isEdit && onDelete && (
+                                <button onClick={onDelete} className="w-full bg-red-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-red-100 hover:bg-red-600 active:scale-95 transition-all">删除记录</button>
+                            )}
                             <button onClick={onClose} className="w-full text-slate-300 font-bold text-xs uppercase tracking-widest py-2">取消</button>
                         </div>
                     </div>
@@ -1419,6 +1422,34 @@
                 }
             };
 
+            const handleRecordDelete = () => {
+                if (editingRecordIdx === null) return;
+
+                // 显示确认对话框
+                if (!confirm('确定要删除这条记录吗？')) return;
+
+                const newHistory = [...(history || [])];
+                if (editingRecordIdx < newHistory.length) {
+                    const record = newHistory[editingRecordIdx];
+                    const dimIdx = dimensions.findIndex(d => d.name === record.dimName);
+
+                    // 删除记录
+                    newHistory.splice(editingRecordIdx, 1);
+
+                    // 更新对应维度的分数（减去被删除记录的分数）
+                    const newScores = [...scores];
+                    if (dimIdx !== -1 && record.pts) {
+                        newScores[dimIdx] = Math.max(0, newScores[dimIdx] - record.pts);
+                    }
+
+                    setHistory(newHistory);
+                    setScores(newScores);
+                    setModalType(null);
+                    setEditingRecordIdx(null);
+                    saveData(newScores, newHistory, null);
+                }
+            };
+
             const totalExp = (scores || []).reduce((a, b) => a + b, 0);
             const totalLevel = calculateLevel(totalExp);
             const balanceValue = calculateBalance(scores);
@@ -1723,6 +1754,7 @@
                                 setEditingRecordIdx(null);
                             }}
                             onConfirm={handleRecordConfirm}
+                            onDelete={handleRecordDelete}
                             history={history}
                             systemTags={systemTags}
                             initialText={editingRecordIdx !== null ? history[editingRecordIdx]?.text : ""}
