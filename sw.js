@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lifematrix-v3.16';
+const CACHE_NAME = 'lifematrix-v3.17';
 const ASSETS = ['./', './index.html', './manifest.json'];
 
 // 安装时缓存基础资源
