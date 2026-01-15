@@ -308,10 +308,19 @@
             );
         };
 
-        const RecordModal = ({ dimName, onClose, onConfirm, history, systemTags = [], recentTags = [], currentDimId, initialText = "", initialTags = [], isEdit = false }) => {
+        const RecordModal = ({ dimName, onClose, onConfirm, history, systemTags = [], recentTags = [], currentDimId, initialText = "", initialTags = [], initialDate = null, isEdit = false }) => {
             const [text, setText] = useState(initialText);
             const [tags, setTags] = useState(initialTags);
             const [tagInput, setTagInput] = useState("");
+
+            // 日期选择（默认今天，格式：YYYY-MM-DD）
+            const [selectedDate, setSelectedDate] = useState(() => {
+                if (initialDate) {
+                    const d = new Date(initialDate);
+                    return d.toISOString().split('T')[0];
+                }
+                return new Date().toISOString().split('T')[0];
+            });
 
             // 当 initialText 或 initialTags 改变时，更新状态
             useEffect(() => {
@@ -385,8 +394,8 @@
                 // 4. 合并手动添加的标签和解析出的标签（去重）
                 const allTags = [...new Set([...tags, ...parsedTags])];
 
-                // 5. 提交时使用处理后的文本
-                onConfirm(normalizedText, allTags);
+                // 5. 提交时使用处理后的文本和选择的日期
+                onConfirm(normalizedText, allTags, selectedDate);
             };
 
             return (
@@ -407,6 +416,17 @@
                                 className="w-full bg-slate-50 border-none rounded-2xl px-6 py-5 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-sky-100 transition-all"
                                 onKeyDown={e => e.key === 'Enter' && handleConfirm()}
                             />
+
+                            {/* Date selector */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-slate-400 font-bold text-xs">📅</span>
+                                <input
+                                    type="date"
+                                    value={selectedDate}
+                                    onChange={e => setSelectedDate(e.target.value)}
+                                    className="flex-1 bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-sky-100 transition-all"
+                                />
+                            </div>
 
                             {/* Tag input section */}
                             <div className="space-y-3">
@@ -1323,12 +1343,12 @@
                 saveData(initScores, [], null);
             };
 
-            const handleRecordConfirm = (text, tags = []) => {
+            const handleRecordConfirm = (text, tags = [], selectedDate = null) => {
                 if (!text || !text.trim()) return;
 
                 // 如果是编辑模式，调用编辑函数
                 if (editingRecordIdx !== null) {
-                    handleRecordEdit(text, tags);
+                    handleRecordEdit(text, tags, selectedDate);
                     return;
                 }
 
@@ -1338,14 +1358,30 @@
 
                 const dim = dimensions[selectedDimIdx];
 
+                // 创建时间戳：使用选择的日期 + 当前时间
+                let timestamp;
+                let dateForDisplay;
+                if (selectedDate) {
+                    // 解析选择的日期（YYYY-MM-DD）
+                    const selectedDateObj = new Date(selectedDate + 'T00:00:00');
+                    const now = new Date();
+                    // 使用选择的日期，但保留当前的时分秒
+                    selectedDateObj.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+                    timestamp = selectedDateObj.getTime();
+                    dateForDisplay = selectedDateObj;
+                } else {
+                    timestamp = Date.now();
+                    dateForDisplay = new Date();
+                }
+
                 const entry = {
                     dimName: dim?.name || "未知",
                     dimColor: dim?.color || "bg-slate-400",
                     text: text,
                     tags: tags,
                     pts: 1,
-                    timestamp: Date.now(),
-                    dateStr: new Date().toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    timestamp: timestamp,
+                    dateStr: dateForDisplay.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' })
                 };
 
                 const newHistory = [entry, ...(history || [])].slice(0, 100);
@@ -1361,16 +1397,33 @@
                 saveData(newScores, newHistory, null, undefined, undefined, undefined, newRecentTags);
             };
 
-            const handleRecordEdit = (text, tags = []) => {
+            const handleRecordEdit = (text, tags = [], selectedDate = null) => {
                 if (!text || !text.trim() || editingRecordIdx === null) return;
 
                 const newHistory = [...(history || [])];
                 if (editingRecordIdx < newHistory.length) {
-                    // 更新记录，保留原有的其他字段
+                    const originalRecord = newHistory[editingRecordIdx];
+
+                    // 如果用户修改了日期，更新时间戳
+                    let timestamp = originalRecord.timestamp;
+                    let dateStr = originalRecord.dateStr;
+
+                    if (selectedDate) {
+                        const selectedDateObj = new Date(selectedDate + 'T00:00:00');
+                        const originalDate = new Date(originalRecord.timestamp);
+                        // 使用新日期，但保留原来的时分秒
+                        selectedDateObj.setHours(originalDate.getHours(), originalDate.getMinutes(), originalDate.getSeconds(), originalDate.getMilliseconds());
+                        timestamp = selectedDateObj.getTime();
+                        dateStr = selectedDateObj.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' });
+                    }
+
+                    // 更新记录
                     newHistory[editingRecordIdx] = {
-                        ...newHistory[editingRecordIdx],
+                        ...originalRecord,
                         text: text,
-                        tags: tags
+                        tags: tags,
+                        timestamp: timestamp,
+                        dateStr: dateStr
                     };
 
                     // 更新最近使用的标签
@@ -1693,6 +1746,7 @@
                             recentTags={recentTags}
                             initialText={editingRecordIdx !== null ? history[editingRecordIdx]?.text : ""}
                             initialTags={editingRecordIdx !== null ? (history[editingRecordIdx]?.tags || []) : []}
+                            initialDate={editingRecordIdx !== null ? history[editingRecordIdx]?.timestamp : null}
                             isEdit={editingRecordIdx !== null}
                         />
                     )}
