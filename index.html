@@ -374,15 +374,18 @@
 
             const handleConfirm = () => {
                 // 1. 统一标签格式：将 #标签 和 [标签] 转换为【标签】
-                const normalizedText = normalizeTagsInText(text);
+                let normalizedText = normalizeTagsInText(text);
 
-                // 2. 从转换后的文本中解析所有标签
+                // 2. 自动识别文本中的已知标签词并加上【】
+                normalizedText = autoWrapTagsInText(normalizedText, existingTags);
+
+                // 3. 从转换后的文本中解析所有标签
                 const parsedTags = parseTagsFromText(normalizedText);
 
-                // 3. 合并手动添加的标签和解析出的标签（去重）
+                // 4. 合并手动添加的标签和解析出的标签（去重）
                 const allTags = [...new Set([...tags, ...parsedTags])];
 
-                // 4. 提交时使用格式统一后的文本
+                // 5. 提交时使用处理后的文本
                 onConfirm(normalizedText, allTags);
             };
 
@@ -965,6 +968,45 @@
             normalized = normalized.replace(/#([^\s#\[\]【】\,\.。，！？\!\?]+)/g, '【$1】');
 
             return normalized;
+        };
+
+        // 自动识别文本中的标签词并加上【】
+        const autoWrapTagsInText = (text, availableTags) => {
+            if (!text || !availableTags || availableTags.length === 0) return text;
+
+            let result = text;
+
+            // 按标签长度从长到短排序，优先匹配较长的标签（避免"第一"覆盖"第一次"）
+            const sortedTags = [...availableTags].sort((a, b) => b.length - a.length);
+
+            sortedTags.forEach(tag => {
+                if (!tag || tag.trim().length === 0) return;
+
+                // 转义特殊正则字符
+                const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+                // 匹配未被【】包裹的标签词
+                // 负向后顾断言(?<!【)确保前面不是【
+                // 负向前瞻断言(?!】)确保后面不是】
+                const regex = new RegExp(`(?<!【)${escapedTag}(?!】)`, 'g');
+
+                // 替换时需要避免在已经被【】包裹的内容中再次替换
+                result = result.replace(regex, (match, offset) => {
+                    // 检查这个位置是否已经在【】内部
+                    const before = result.substring(0, offset);
+                    const openCount = (before.match(/【/g) || []).length;
+                    const closeCount = (before.match(/】/g) || []).length;
+
+                    // 如果【的数量大于】，说明当前位置在【】内部，不替换
+                    if (openCount > closeCount) {
+                        return match;
+                    }
+
+                    return `【${match}】`;
+                });
+            });
+
+            return result;
         };
 
         // 更新最近使用的标签列表（保持最新的10个）
