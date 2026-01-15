@@ -308,17 +308,33 @@
             );
         };
 
-        const RecordModal = ({ dimName, onClose, onConfirm, history, systemTags = [], currentDimId, initialText = "", initialTags = [], isEdit = false }) => {
+        const RecordModal = ({ dimName, onClose, onConfirm, onDelete, history, systemTags = [], currentDimId, initialText = "", initialTags = [], isEdit = false }) => {
             const [text, setText] = useState(initialText);
+            const [tags, setTags] = useState(Array.isArray(initialTags) ? initialTags : []);
             const inputRef = useRef(null);
 
             // System default tags
             const SYSTEM_DEFAULTS = ['第一次', '里程碑'];
 
-            // 当 initialText 改变时，更新状态
+            // 当 initialText 或 initialTags 改变时，更新状态
             useEffect(() => {
-                setText(initialText);
-            }, [initialText]);
+                // 如果是编辑模式且有initialTags，确保text包含这些tags
+                if (isEdit && initialTags && initialTags.length > 0) {
+                    let textWithTags = initialText;
+                    // 检查text中是否已经包含tags，如果不包含则添加到末尾
+                    initialTags.forEach(tag => {
+                        const tagPattern = new RegExp(`【${tag}】|\\[${tag}\\]|#${tag}#`);
+                        if (!tagPattern.test(textWithTags)) {
+                            textWithTags += ` 【${tag}】`;
+                        }
+                    });
+                    setText(textWithTags);
+                } else {
+                    setText(initialText);
+                }
+                const tagsArray = Array.isArray(initialTags) ? initialTags : [];
+                setTags([...tagsArray]);
+            }, [initialText, JSON.stringify(initialTags), isEdit]);
 
             // Get last 10 used tags from history for THIS dimension only
             const tagSuggestions = useMemo(() => {
@@ -435,6 +451,19 @@
                         </div>
                         <div className="flex flex-col gap-3 mt-2">
                             <button onClick={handleConfirm} className="w-full bg-sky-600 text-white py-4.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-sky-100 hover:bg-sky-500 active:scale-95 transition-all">{isEdit ? '保存更改' : '确认进度'}</button>
+                            {isEdit && onDelete && (
+                                <button
+                                    onClick={() => {
+                                        if (window.confirm('确定要删除这条记录吗？删除后将减少对应维度的分数。')) {
+                                            onDelete();
+                                        }
+                                    }}
+                                    className="w-full bg-rose-50 border border-rose-200 text-rose-600 py-3.5 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-rose-100 active:scale-95 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <Icon name="trash" size={14} />
+                                    删除记录
+                                </button>
+                            )}
                             <button onClick={onClose} className="w-full text-slate-300 font-bold text-xs uppercase tracking-widest py-2">取消</button>
                         </div>
                     </div>
@@ -1419,6 +1448,33 @@
                 }
             };
 
+            const handleRecordDelete = () => {
+                if (editingRecordIdx === null) return;
+
+                const newHistory = [...(history || [])];
+                if (editingRecordIdx >= newHistory.length) return;
+
+                const deletedRecord = newHistory[editingRecordIdx];
+
+                // 找到对应维度的索引
+                const dimIndex = dimensions.findIndex(d => d.name === deletedRecord.dimName);
+
+                // 删除记录
+                newHistory.splice(editingRecordIdx, 1);
+
+                // 减少对应维度的分数（每条记录 = 1分）
+                const newScores = [...(scores || [])];
+                if (dimIndex >= 0 && newScores[dimIndex] > 0) {
+                    newScores[dimIndex] = newScores[dimIndex] - 1;
+                }
+
+                setHistory(newHistory);
+                setScores(newScores);
+                setModalType(null);
+                setEditingRecordIdx(null);
+                saveData(newScores, newHistory, null);
+            };
+
             const totalExp = (scores || []).reduce((a, b) => a + b, 0);
             const totalLevel = calculateLevel(totalExp);
             const balanceValue = calculateBalance(scores);
@@ -1723,6 +1779,7 @@
                                 setEditingRecordIdx(null);
                             }}
                             onConfirm={handleRecordConfirm}
+                            onDelete={editingRecordIdx !== null ? handleRecordDelete : null}
                             history={history}
                             systemTags={systemTags}
                             initialText={editingRecordIdx !== null ? history[editingRecordIdx]?.text : ""}
