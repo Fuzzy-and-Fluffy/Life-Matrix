@@ -308,10 +308,19 @@
             );
         };
 
-        const RecordModal = ({ dimName, onClose, onConfirm, onDelete, history, systemTags = [], currentDimId, initialText = "", initialTags = [], isEdit = false }) => {
+        const RecordModal = ({ dimName, onClose, onConfirm, onDelete, history, systemTags = [], recentTags = [], currentDimId, initialText = "", initialTags = [], initialDate = null, isEdit = false }) => {
             const [text, setText] = useState(initialText);
             const [tags, setTags] = useState(Array.isArray(initialTags) ? initialTags : []);
             const inputRef = useRef(null);
+
+            // 日期选择（默认今天，格式：YYYY-MM-DD）
+            const [selectedDate, setSelectedDate] = useState(() => {
+                if (initialDate) {
+                    const d = new Date(initialDate);
+                    return d.toISOString().split('T')[0];
+                }
+                return new Date().toISOString().split('T')[0];
+            });
 
             // System default tags
             const SYSTEM_DEFAULTS = ['第一次', '里程碑'];
@@ -392,7 +401,14 @@
             };
 
             const handleConfirm = () => {
-                onConfirm(text);
+                // 1. 统一标签格式：将 #标签 和 [标签] 转换为【标签】
+                let normalizedText = normalizeTagsInText(text);
+
+                // 2. 从转换后的文本中解析所有标签
+                const parsedTags = parseTagsFromText(normalizedText);
+
+                // 3. 提交时使用处理后的文本、解析的标签和选择的日期
+                onConfirm(normalizedText, parsedTags, selectedDate);
             };
 
             return (
@@ -419,6 +435,17 @@
                                     }
                                 }}
                             />
+
+                            {/* Date selector */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-slate-400 font-bold text-xs">📅</span>
+                                <input
+                                    type="date"
+                                    value={selectedDate}
+                                    onChange={e => setSelectedDate(e.target.value)}
+                                    className="flex-1 bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-sky-100 transition-all"
+                                />
+                            </div>
 
                             {/* Tag Suggestions - Click to insert 【tag】 into text */}
                             <div className="space-y-2">
@@ -1085,6 +1112,84 @@
             { id: 'tag_2', name: '里程碑', appliesTo: [] }
         ];
 
+        // 从文本中解析所有格式的标签：【】、[]、#
+        const parseTagsFromText = (text) => {
+            if (!text) return [];
+            const matches = [];
+
+            // 1. 解析【】格式
+            const regex1 = /【([^】]+)】/g;
+            let match;
+            while ((match = regex1.exec(text)) !== null) {
+                const tag = match[1].trim();
+                if (tag && !matches.includes(tag)) {
+                    matches.push(tag);
+                }
+            }
+
+            // 2. 解析[]格式
+            const regex2 = /\[([^\]]+)\]/g;
+            while ((match = regex2.exec(text)) !== null) {
+                const tag = match[1].trim();
+                if (tag && !matches.includes(tag)) {
+                    matches.push(tag);
+                }
+            }
+
+            // 3. 解析#标签格式
+            const regex3 = /#([^\s#\[\]【】\,\.。，！？\!\?]+)/g;
+            while ((match = regex3.exec(text)) !== null) {
+                const tag = match[1].trim();
+                if (tag && !matches.includes(tag)) {
+                    matches.push(tag);
+                }
+            }
+
+            return matches;
+        };
+
+        // 统一标签格式：将文本中的 #标签 和 [标签] 转换为【标签】
+        const normalizeTagsInText = (text) => {
+            if (!text) return text;
+            let normalized = text;
+            normalized = normalized.replace(/\[([^\]]+)\]/g, '【$1】');
+            normalized = normalized.replace(/#([^\s#\[\]【】\,\.。，！？\!\?]+)/g, '【$1】');
+            return normalized;
+        };
+
+        // 自动识别文本中的标签词并加上【】
+        const autoWrapTagsInText = (text, availableTags) => {
+            if (!text || !availableTags || availableTags.length === 0) return text;
+            let result = text;
+            const sortedTags = [...availableTags].sort((a, b) => b.length - a.length);
+
+            sortedTags.forEach(tag => {
+                if (!tag || tag.trim().length === 0) return;
+                const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(`(?<!【)${escapedTag}(?!】)`, 'g');
+                result = result.replace(regex, (match, offset) => {
+                    const before = result.substring(0, offset);
+                    const openCount = (before.match(/【/g) || []).length;
+                    const closeCount = (before.match(/】/g) || []).length;
+                    if (openCount > closeCount) return match;
+                    return `【${match}】`;
+                });
+            });
+            return result;
+        };
+
+        // 更新最近使用的标签列表（保持最新的10个）
+        const updateRecentTags = (currentRecentTags, newTags) => {
+            if (!newTags || newTags.length === 0) return currentRecentTags;
+            const updated = [...currentRecentTags];
+            newTags.forEach(tag => {
+                const index = updated.indexOf(tag);
+                if (index > -1) updated.splice(index, 1);
+                updated.unshift(tag);
+            });
+            return updated.slice(0, 10);
+        };
+
         const App = () => {
             const [step, setStep] = useState(1);
             const [name, setName] = useState("");
@@ -1093,6 +1198,7 @@
             const [scores, setScores] = useState([]);
             const [history, setHistory] = useState([]);
             const [systemTags, setSystemTags] = useState(INITIAL_SYSTEM_TAGS);
+            const [recentTags, setRecentTags] = useState([]); // 最近使用的标签历史（最多10个）
 
             // Firebase Auth State
             const [currentUser, setCurrentUser] = useState(null);
@@ -1141,6 +1247,7 @@
                             if (data.scores) setScores(data.scores);
                             if (data.history) setHistory(data.history);
                             if (data.systemTags) setSystemTags(data.systemTags);
+                            if (data.recentTags) setRecentTags(data.recentTags);
                             if (data.name && data.scores && data.scores.length > 0) {
                                 setStep(4);
                             }
@@ -1165,6 +1272,7 @@
                         if (data.scores) setScores(data.scores);
                         if (data.history) setHistory(data.history);
                         if (data.systemTags) setSystemTags(data.systemTags);
+                        if (data.recentTags) setRecentTags(data.recentTags);
                         if (data.name && data.scores && data.scores.length > 0) {
                             setStep(4);
                         }
@@ -1183,7 +1291,7 @@
             };
 
             // --- 保存数据 ---
-            const saveData = async (newScores, newHistory, newDims, newName, newAvatar, newSystemTags) => {
+            const saveData = async (newScores, newHistory, newDims, newName, newAvatar, newSystemTags, newRecentTags) => {
                 const data = {
                     name: newName !== undefined ? newName : name,
                     avatar: newAvatar !== undefined ? newAvatar : avatar,
@@ -1191,6 +1299,7 @@
                     scores: newScores || scores,
                     history: newHistory || history,
                     systemTags: newSystemTags || systemTags,
+                    recentTags: newRecentTags !== undefined ? newRecentTags : recentTags,
                     updatedAt: new Date().toISOString()
                 };
 
@@ -1376,19 +1485,12 @@
                 saveData(initScores, [], null);
             };
 
-            const handleRecordConfirm = (text) => {
+            const handleRecordConfirm = (text, tags = [], selectedDate = null) => {
                 if (!text || !text.trim()) return;
-
-                // Extract tags from inline text using 【】, [], or # patterns
-                const tagRegex = /【([^】]+)】|\[([^\]]+)\]|#([^#]+)#/g;
-                const extractedTags = [...new Set(Array.from(text.matchAll(tagRegex)).map(match => {
-                    // match[1] = 【】, match[2] = [], match[3] = #
-                    return (match[1] || match[2] || match[3]).trim();
-                }))];
 
                 // Sync extracted tags to systemTags (add new tags if they don't exist)
                 let updatedSystemTags = [...systemTags];
-                extractedTags.forEach(tagName => {
+                tags.forEach(tagName => {
                     const tagExists = systemTags.some(t => t.name === tagName);
                     if (!tagExists) {
                         const newTag = {
@@ -1400,9 +1502,13 @@
                     }
                 });
 
+                // Update recentTags
+                const newRecentTags = updateRecentTags(recentTags, tags);
+                setRecentTags(newRecentTags);
+
                 // 如果是编辑模式，调用编辑函数
                 if (editingRecordIdx !== null) {
-                    handleRecordEdit(text, extractedTags, updatedSystemTags);
+                    handleRecordEdit(text, tags, selectedDate, updatedSystemTags);
                     return;
                 }
 
@@ -1412,14 +1518,28 @@
 
                 const dim = dimensions[selectedDimIdx];
 
+                // Create timestamp: use selected date + current time
+                let timestamp;
+                let dateForDisplay;
+                if (selectedDate) {
+                    const selectedDateObj = new Date(selectedDate + 'T00:00:00');
+                    const now = new Date();
+                    selectedDateObj.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+                    timestamp = selectedDateObj.getTime();
+                    dateForDisplay = selectedDateObj;
+                } else {
+                    timestamp = Date.now();
+                    dateForDisplay = new Date();
+                }
+
                 const entry = {
                     dimName: dim?.name || "未知",
                     dimColor: dim?.color || "bg-slate-400",
                     text: text,
-                    tags: extractedTags,
+                    tags: tags,
                     pts: 1,
-                    timestamp: Date.now(),
-                    dateStr: new Date().toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    timestamp: timestamp,
+                    dateStr: dateForDisplay.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' })
                 };
 
                 const newHistory = [entry, ...(history || [])].slice(0, 100);
@@ -1428,27 +1548,47 @@
                 setSystemTags(updatedSystemTags);
                 setModalType(null);
                 setEditingRecordIdx(null);
-                saveData(newScores, newHistory, null, undefined, undefined, updatedSystemTags);
+                saveData(newScores, newHistory, null, undefined, undefined, updatedSystemTags, newRecentTags);
             };
 
-            const handleRecordEdit = (text, tags = [], updatedSystemTags = null) => {
+            const handleRecordEdit = (text, tags = [], selectedDate = null, updatedSystemTags = null) => {
                 if (!text || !text.trim() || editingRecordIdx === null) return;
 
                 const newHistory = [...(history || [])];
                 if (editingRecordIdx < newHistory.length) {
-                    // 更新记录，保留原有的其他字段
+                    const originalRecord = newHistory[editingRecordIdx];
+
+                    // Update date if changed
+                    let timestamp = originalRecord.timestamp;
+                    let dateStr = originalRecord.dateStr;
+                    if (selectedDate) {
+                        const selectedDateObj = new Date(selectedDate + 'T00:00:00');
+                        const originalDate = new Date(originalRecord.timestamp);
+                        selectedDateObj.setHours(originalDate.getHours(), originalDate.getMinutes(), originalDate.getSeconds(), originalDate.getMilliseconds());
+                        timestamp = selectedDateObj.getTime();
+                        dateStr = selectedDateObj.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' });
+                    }
+
+                    // Update record
                     newHistory[editingRecordIdx] = {
-                        ...newHistory[editingRecordIdx],
+                        ...originalRecord,
                         text: text,
-                        tags: tags
+                        tags: tags,
+                        timestamp: timestamp,
+                        dateStr: dateStr
                     };
+
+                    // Update recentTags
+                    const newRecentTags = updateRecentTags(recentTags, tags);
+                    setRecentTags(newRecentTags);
+
                     setHistory(newHistory);
                     if (updatedSystemTags) {
                         setSystemTags(updatedSystemTags);
                     }
                     setModalType(null);
                     setEditingRecordIdx(null);
-                    saveData(null, newHistory, null, undefined, undefined, updatedSystemTags);
+                    saveData(null, newHistory, null, undefined, undefined, updatedSystemTags, newRecentTags);
                 }
             };
 
@@ -1786,8 +1926,10 @@
                             onDelete={editingRecordIdx !== null ? handleRecordDelete : null}
                             history={history}
                             systemTags={systemTags}
+                            recentTags={recentTags}
                             initialText={editingRecordIdx !== null ? history[editingRecordIdx]?.text : ""}
                             initialTags={editingRecordIdx !== null ? (history[editingRecordIdx]?.tags || []) : []}
+                            initialDate={editingRecordIdx !== null ? history[editingRecordIdx]?.timestamp : null}
                             isEdit={editingRecordIdx !== null}
                         />
                     )}
