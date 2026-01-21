@@ -137,7 +137,7 @@
                 plus: <g><path d="M5 12h14" /><path d="M12 5v14" /></g>,
                 check: <polyline points="20 6 9 17 4 12" />,
                 camera: <g><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></g>,
-                sparkle: <g><polygon points="12,2 4,18 20,18" fill="none" strokeWidth="2" /><polygon points="12,22 4,6 20,6" fill="none" strokeWidth="2" /></g>,
+                sparkle: <path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z" fill="currentColor" stroke="none" />,
                 history: <g><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l4 2" /></g>,
                 scale: <g><path d="M16 16c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z" /><path d="M12 16c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z" /><path d="M20 10c0-4.4-3.6-8-8-8s-8 3.6-8 8" /><path d="M4 10h16" /><path d="M12 10v10" /></g>,
                 clock: <g><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></g>,
@@ -1488,6 +1488,7 @@
             const handleRecordConfirm = (text, tags = [], selectedDate = null) => {
                 if (!text || !text.trim()) return;
 
+<<<<<<< Updated upstream
                 // Sync extracted tags to systemTags (add new tags if they don't exist)
                 let updatedSystemTags = [...systemTags];
                 tags.forEach(tagName => {
@@ -1509,6 +1510,67 @@
                 // 如果是编辑模式，调用编辑函数
                 if (editingRecordIdx !== null) {
                     handleRecordEdit(text, tags, selectedDate, updatedSystemTags);
+=======
+                // Extract tags from multiple formats: 【】, [], ##tag## or ##tag (until space/end)
+                // Pattern 1: 【content】
+                // Pattern 2: [content]
+                // Pattern 3: ##content## or ##content (until space or end)
+                const tagPatterns = [
+                    /【([^】]+)】/g,           // Chinese brackets
+                    /\[([^\]]+)\]/g,           // Square brackets
+                    /##([^#\s]+)##/g,          // Double hash enclosed
+                    /##([^\s#]+)/g             // Double hash followed by word
+                ];
+
+                // Extract all tags from all patterns
+                const allTags = [];
+                tagPatterns.forEach(regex => {
+                    const matches = Array.from(text.matchAll(regex));
+                    matches.forEach(match => {
+                        const tag = match[1].trim();
+                        if (tag && !allTags.includes(tag)) {
+                            allTags.push(tag);
+                        }
+                    });
+                });
+                const extractedTags = allTags;
+
+                // Normalize text: convert all tag formats to 【】
+                let normalizedText = text;
+                // Replace [tag] with 【tag】
+                normalizedText = normalizedText.replace(/\[([^\]]+)\]/g, '【$1】');
+                // Replace ##tag## with 【tag】
+                normalizedText = normalizedText.replace(/##([^#\s]+)##/g, '【$1】');
+                // Replace ##tag (word) with 【tag】
+                normalizedText = normalizedText.replace(/##([^\s#]+)/g, '【$1】');
+
+
+                const dim = dimensions[selectedDimIdx];
+
+                // Add any NEW tags to systemTags (default: only apply to current dimension)
+                const existingTagNames = systemTags.map(t => t.name);
+                const newSystemTags = [...systemTags];
+                let tagsUpdated = false;
+
+                extractedTags.forEach(tagName => {
+                    if (!existingTagNames.includes(tagName)) {
+                        newSystemTags.push({
+                            id: `tag_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                            name: tagName,
+                            appliesTo: [dim?.id] // Default: only this dimension
+                        });
+                        tagsUpdated = true;
+                    }
+                });
+
+                if (tagsUpdated) {
+                    setSystemTags(newSystemTags);
+                }
+
+                // 如果是编辑模式，调用编辑函数
+                if (editingRecordIdx !== null) {
+                    handleRecordEdit(text, extractedTags, tagsUpdated ? newSystemTags : null);
+>>>>>>> Stashed changes
                     return;
                 }
 
@@ -1516,6 +1578,7 @@
                 while (newScores.length <= selectedDimIdx) newScores.push(0);
                 newScores[selectedDimIdx] = (newScores[selectedDimIdx] || 0) + 1;
 
+<<<<<<< Updated upstream
                 const dim = dimensions[selectedDimIdx];
 
                 // Create timestamp: use selected date + current time
@@ -1537,6 +1600,13 @@
                     dimColor: dim?.color || "bg-slate-400",
                     text: text,
                     tags: tags,
+=======
+                const entry = {
+                    dimName: dim?.name || "未知",
+                    dimColor: dim?.color || "bg-slate-400",
+                    text: normalizedText,
+                    tags: extractedTags,
+>>>>>>> Stashed changes
                     pts: 1,
                     timestamp: timestamp,
                     dateStr: dateForDisplay.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' })
@@ -1548,10 +1618,17 @@
                 setSystemTags(updatedSystemTags);
                 setModalType(null);
                 setEditingRecordIdx(null);
+<<<<<<< Updated upstream
                 saveData(newScores, newHistory, null, undefined, undefined, updatedSystemTags, newRecentTags);
             };
 
             const handleRecordEdit = (text, tags = [], selectedDate = null, updatedSystemTags = null) => {
+=======
+                saveData(newScores, newHistory, null, null, null, tagsUpdated ? newSystemTags : null);
+            };
+
+            const handleRecordEdit = (text, tags = [], newSystemTagsParam = null) => {
+>>>>>>> Stashed changes
                 if (!text || !text.trim() || editingRecordIdx === null) return;
 
                 const newHistory = [...(history || [])];
@@ -1588,7 +1665,11 @@
                     }
                     setModalType(null);
                     setEditingRecordIdx(null);
+<<<<<<< Updated upstream
                     saveData(null, newHistory, null, undefined, undefined, updatedSystemTags, newRecentTags);
+=======
+                    saveData(null, newHistory, null, null, null, newSystemTagsParam);
+>>>>>>> Stashed changes
                 }
             };
 
