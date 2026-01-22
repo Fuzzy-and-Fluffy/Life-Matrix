@@ -2113,8 +2113,13 @@
             );
         };
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        try {
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(<App />);
+        } catch (error) {
+            console.error('React render error:', error);
+            document.body.innerHTML = `<div style="padding: 20px; font-family: sans-serif;"><h1>Error</h1><pre>${error.message}\n\n${error.stack}</pre></div>`;
+        }
     </script>
 </body>
 
