@@ -401,14 +401,12 @@
             };
 
             const handleConfirm = () => {
-                // 1. 统一标签格式：将 #标签 和 [标签] 转换为【标签】
-                let normalizedText = normalizeTagsInText(text);
+                // Extract tags from inline text using 【】 pattern
+                const tagRegex = /【([^】]+)】/g;
+                const extractedTags = [...new Set(Array.from(text.matchAll(tagRegex)).map(match => match[1].trim()))];
 
-                // 2. 从转换后的文本中解析所有标签
-                const parsedTags = parseTagsFromText(normalizedText);
-
-                // 3. 提交时使用处理后的文本、解析的标签和选择的日期
-                onConfirm(normalizedText, parsedTags, selectedDate);
+                // Pass text and extracted tags
+                onConfirm(text, extractedTags);
             };
 
             return (
@@ -1500,65 +1498,8 @@
                 saveData(initScores, [], null);
             };
 
-            const handleRecordConfirm = (text, tags = [], selectedDate = null) => {
+            const handleRecordConfirm = (text, tags = []) => {
                 if (!text || !text.trim()) return;
-
-<<<<<<< Updated upstream
-                // Sync extracted tags to systemTags (add new tags if they don't exist)
-                let updatedSystemTags = [...systemTags];
-                tags.forEach(tagName => {
-                    const tagExists = systemTags.some(t => t.name === tagName);
-                    if (!tagExists) {
-                        const newTag = {
-                            id: `tag_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                            name: tagName,
-                            appliesTo: [] // Empty array means applies to all dimensions
-                        };
-                        updatedSystemTags.push(newTag);
-                    }
-                });
-
-                // Update recentTags
-                const newRecentTags = updateRecentTags(recentTags, tags);
-                setRecentTags(newRecentTags);
-
-                // 如果是编辑模式，调用编辑函数
-                if (editingRecordIdx !== null) {
-                    handleRecordEdit(text, tags, selectedDate, updatedSystemTags);
-=======
-                // Extract tags from multiple formats: 【】, [], ##tag## or ##tag (until space/end)
-                // Pattern 1: 【content】
-                // Pattern 2: [content]
-                // Pattern 3: ##content## or ##content (until space or end)
-                const tagPatterns = [
-                    /【([^】]+)】/g,           // Chinese brackets
-                    /\[([^\]]+)\]/g,           // Square brackets
-                    /##([^#\s]+)##/g,          // Double hash enclosed
-                    /##([^\s#]+)/g             // Double hash followed by word
-                ];
-
-                // Extract all tags from all patterns
-                const allTags = [];
-                tagPatterns.forEach(regex => {
-                    const matches = Array.from(text.matchAll(regex));
-                    matches.forEach(match => {
-                        const tag = match[1].trim();
-                        if (tag && !allTags.includes(tag)) {
-                            allTags.push(tag);
-                        }
-                    });
-                });
-                const extractedTags = allTags;
-
-                // Normalize text: convert all tag formats to 【】
-                let normalizedText = text;
-                // Replace [tag] with 【tag】
-                normalizedText = normalizedText.replace(/\[([^\]]+)\]/g, '【$1】');
-                // Replace ##tag## with 【tag】
-                normalizedText = normalizedText.replace(/##([^#\s]+)##/g, '【$1】');
-                // Replace ##tag (word) with 【tag】
-                normalizedText = normalizedText.replace(/##([^\s#]+)/g, '【$1】');
-
 
                 const dim = dimensions[selectedDimIdx];
 
@@ -1567,7 +1508,7 @@
                 const newSystemTags = [...systemTags];
                 let tagsUpdated = false;
 
-                extractedTags.forEach(tagName => {
+                tags.forEach(tagName => {
                     if (!existingTagNames.includes(tagName)) {
                         newSystemTags.push({
                             id: `tag_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -1584,8 +1525,7 @@
 
                 // 如果是编辑模式，调用编辑函数
                 if (editingRecordIdx !== null) {
-                    handleRecordEdit(text, extractedTags, tagsUpdated ? newSystemTags : null);
->>>>>>> Stashed changes
+                    handleRecordEdit(text, tags, tagsUpdated ? newSystemTags : null);
                     return;
                 }
 
@@ -1593,98 +1533,39 @@
                 while (newScores.length <= selectedDimIdx) newScores.push(0);
                 newScores[selectedDimIdx] = (newScores[selectedDimIdx] || 0) + 1;
 
-<<<<<<< Updated upstream
-                const dim = dimensions[selectedDimIdx];
-
-                // Create timestamp: use selected date + current time
-                let timestamp;
-                let dateForDisplay;
-                if (selectedDate) {
-                    const selectedDateObj = new Date(selectedDate + 'T00:00:00');
-                    const now = new Date();
-                    selectedDateObj.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
-                    timestamp = selectedDateObj.getTime();
-                    dateForDisplay = selectedDateObj;
-                } else {
-                    timestamp = Date.now();
-                    dateForDisplay = new Date();
-                }
-
                 const entry = {
                     dimName: dim?.name || "未知",
                     dimColor: dim?.color || "bg-slate-400",
                     text: text,
                     tags: tags,
-=======
-                const entry = {
-                    dimName: dim?.name || "未知",
-                    dimColor: dim?.color || "bg-slate-400",
-                    text: normalizedText,
-                    tags: extractedTags,
->>>>>>> Stashed changes
                     pts: 1,
-                    timestamp: timestamp,
-                    dateStr: dateForDisplay.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' })
+                    timestamp: Date.now(),
+                    dateStr: new Date().toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
                 };
 
                 const newHistory = [entry, ...(history || [])].slice(0, 100);
                 setScores(newScores);
                 setHistory(newHistory);
-                setSystemTags(updatedSystemTags);
                 setModalType(null);
                 setEditingRecordIdx(null);
-<<<<<<< Updated upstream
-                saveData(newScores, newHistory, null, undefined, undefined, updatedSystemTags, newRecentTags);
-            };
-
-            const handleRecordEdit = (text, tags = [], selectedDate = null, updatedSystemTags = null) => {
-=======
                 saveData(newScores, newHistory, null, null, null, tagsUpdated ? newSystemTags : null);
             };
 
             const handleRecordEdit = (text, tags = [], newSystemTagsParam = null) => {
->>>>>>> Stashed changes
                 if (!text || !text.trim() || editingRecordIdx === null) return;
 
                 const newHistory = [...(history || [])];
                 if (editingRecordIdx < newHistory.length) {
-                    const originalRecord = newHistory[editingRecordIdx];
-
-                    // Update date if changed
-                    let timestamp = originalRecord.timestamp;
-                    let dateStr = originalRecord.dateStr;
-                    if (selectedDate) {
-                        const selectedDateObj = new Date(selectedDate + 'T00:00:00');
-                        const originalDate = new Date(originalRecord.timestamp);
-                        selectedDateObj.setHours(originalDate.getHours(), originalDate.getMinutes(), originalDate.getSeconds(), originalDate.getMilliseconds());
-                        timestamp = selectedDateObj.getTime();
-                        dateStr = selectedDateObj.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' });
-                    }
-
-                    // Update record
+                    // 更新记录，保留原有的其他字段
                     newHistory[editingRecordIdx] = {
-                        ...originalRecord,
+                        ...newHistory[editingRecordIdx],
                         text: text,
-                        tags: tags,
-                        timestamp: timestamp,
-                        dateStr: dateStr
+                        tags: tags
                     };
-
-                    // Update recentTags
-                    const newRecentTags = updateRecentTags(recentTags, tags);
-                    setRecentTags(newRecentTags);
-
                     setHistory(newHistory);
-                    if (updatedSystemTags) {
-                        setSystemTags(updatedSystemTags);
-                    }
                     setModalType(null);
                     setEditingRecordIdx(null);
-<<<<<<< Updated upstream
-                    saveData(null, newHistory, null, undefined, undefined, updatedSystemTags, newRecentTags);
-=======
                     saveData(null, newHistory, null, null, null, newSystemTagsParam);
->>>>>>> Stashed changes
                 }
             };
 
