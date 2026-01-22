@@ -1253,55 +1253,74 @@
                 }
             };
 
-            // --- 从 Firestore 加载 ---
-            const loadFromFirestore = async (userId) => {
-                try {
-                    setSyncStatus('syncing');
-                    const doc = await db.collection('users').doc(userId).get();
 
-                    if (doc.exists) {
-                        const data = doc.data();
-                        if (data.name) setName(data.name);
-                        if (data.avatar) setAvatar(data.avatar);
-                        if (data.dimensions) setDimensions(data.dimensions);
-                        if (data.scores) setScores(data.scores);
-                        if (data.history) setHistory(data.history);
-                        if (data.systemTags) setSystemTags(data.systemTags);
-                        if (data.recentTags) setRecentTags(data.recentTags);
-                        if (data.name && data.scores && data.scores.length > 0) {
-                            setStep(4);
-                        }
-                        // 同步到 localStorage 作为备份
-                        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-                    } else {
-                        // Firestore 没有数据，尝试从 localStorage 迁移
-                        loadFromLocalStorage();
-                    }
-                    setSyncStatus('synced');
-                } catch (e) {
-                    console.error("Firestore load error", e);
-                    setSyncStatus('offline');
-                    loadFromLocalStorage();
-                }
-            };
 
-            // --- Firebase Auth 监听 ---
+            // --- 立即从 localStorage 加载（PWA 快速启动优化）---
+            useEffect(() => {
+                // 立即加载本地缓存数据，不等待 Firebase
+                loadFromLocalStorage();
+                // 数据已加载，立即关闭 loading
+                setAuthLoading(false);
+            }, []);
+
+            // --- Firebase Auth 监听（后台静默同步）---
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(async (user) => {
                     setCurrentUser(user);
 
                     if (user) {
-                        // 用户已登录，从 Firestore 加载数据
-                        await loadFromFirestore(user.uid);
-                    } else {
-                        // 用户未登录，从 localStorage 加载
-                        loadFromLocalStorage();
+                        // 用户已登录，后台静默同步 Firestore（不阻塞 UI）
+                        syncWithFirestore(user.uid);
                     }
-                    // 数据加载完成后再关闭loading状态
-                    setAuthLoading(false);
                 });
                 return () => unsubscribe();
             }, []);
+
+            // --- 后台静默同步 Firestore ---
+            const syncWithFirestore = async (userId) => {
+                try {
+                    setSyncStatus('syncing');
+                    const doc = await db.collection('users').doc(userId).get();
+
+                    if (doc.exists) {
+                        const cloudData = doc.data();
+                        const localData = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+
+                        // 比较更新时间，使用较新的数据
+                        const cloudTime = cloudData.updatedAt ? new Date(cloudData.updatedAt).getTime() : 0;
+                        const localTime = localData.updatedAt ? new Date(localData.updatedAt).getTime() : 0;
+
+                        if (cloudTime > localTime) {
+                            // 云端数据更新，静默更新本地状态
+                            if (cloudData.name) setName(cloudData.name);
+                            if (cloudData.avatar) setAvatar(cloudData.avatar);
+                            if (cloudData.dimensions) setDimensions(cloudData.dimensions);
+                            if (cloudData.scores) setScores(cloudData.scores);
+                            if (cloudData.history) setHistory(cloudData.history);
+                            if (cloudData.systemTags) setSystemTags(cloudData.systemTags);
+                            if (cloudData.recentTags) setRecentTags(cloudData.recentTags);
+                            if (cloudData.name && cloudData.scores && cloudData.scores.length > 0) {
+                                setStep(4);
+                            }
+                            // 同步到 localStorage
+                            localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData));
+                        } else if (localTime > cloudTime && localData.scores) {
+                            // 本地数据更新，同步到云端
+                            await db.collection('users').doc(userId).set(localData, { merge: true });
+                        }
+                    } else if (localStorage.getItem(STORAGE_KEY)) {
+                        // Firestore 没有数据，上传本地数据
+                        const localData = JSON.parse(localStorage.getItem(STORAGE_KEY));
+                        if (localData && localData.scores) {
+                            await db.collection('users').doc(userId).set(localData, { merge: true });
+                        }
+                    }
+                    setSyncStatus('synced');
+                } catch (e) {
+                    console.error("Firestore sync error", e);
+                    setSyncStatus('offline');
+                }
+            };
 
             // --- 保存数据 ---
             const saveData = async (newScores, newHistory, newDims, newName, newAvatar, newSystemTags, newRecentTags) => {
