@@ -1231,24 +1231,6 @@
             // --- 常量 ---
             const STORAGE_KEY = 'life_matrix_v34_csv';
 
-            // --- Firebase Auth 监听 ---
-            useEffect(() => {
-                const unsubscribe = auth.onAuthStateChanged(async (user) => {
-                    setCurrentUser(user);
-
-                    if (user) {
-                        // 用户已登录，从 Firestore 加载数据
-                        await loadFromFirestore(user.uid);
-                    } else {
-                        // 用户未登录，从 localStorage 加载
-                        loadFromLocalStorage();
-                    }
-                    // 数据加载完成后再关闭loading状态
-                    setAuthLoading(false);
-                });
-                return () => unsubscribe();
-            }, []);
-
             // --- 从 localStorage 加载 ---
             const loadFromLocalStorage = () => {
                 try {
@@ -1304,6 +1286,24 @@
                     loadFromLocalStorage();
                 }
             };
+
+            // --- Firebase Auth 监听 ---
+            useEffect(() => {
+                const unsubscribe = auth.onAuthStateChanged(async (user) => {
+                    setCurrentUser(user);
+
+                    if (user) {
+                        // 用户已登录，从 Firestore 加载数据
+                        await loadFromFirestore(user.uid);
+                    } else {
+                        // 用户未登录，从 localStorage 加载
+                        loadFromLocalStorage();
+                    }
+                    // 数据加载完成后再关闭loading状态
+                    setAuthLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
 
             // --- 保存数据 ---
             const saveData = async (newScores, newHistory, newDims, newName, newAvatar, newSystemTags, newRecentTags) => {
