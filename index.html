@@ -989,10 +989,10 @@
                                         <span className="font-bold text-xs text-slate-600">备份存档 (JSON)</span>
                                     </button>
                                     <div className="relative">
-                                        <input type="file" accept=".json" ref={fileInput} className="hidden" onChange={handleFileChange} />
+                                        <input type="file" accept=".json,.csv" ref={fileInput} className="hidden" onChange={handleFileChange} />
                                         <button onClick={() => fileInput.current.click()} className="w-full bg-slate-50 border border-slate-100 hover:bg-slate-100 py-4 rounded-2xl flex items-center justify-center gap-3 transition-all group">
                                             <span className="p-1.5 bg-white rounded-full shadow-sm text-purple-500 group-hover:scale-110 transition-transform"><Icon name="fast" size={16} /></span>
-                                            <span className="font-bold text-xs text-slate-600">恢复存档</span>
+                                            <span className="font-bold text-xs text-slate-600">恢复存档 (JSON/CSV)</span>
                                         </button>
                                     </div>
 
@@ -1516,24 +1516,136 @@
                 document.body.removeChild(link);
             };
 
-            const handleImport = (jsonString) => {
-                try {
-                    const data = JSON.parse(jsonString);
-                    if (!data.dimensions || !data.scores) {
-                        alert("文件格式不正确");
+            const handleImport = (fileContent) => {
+                // 尝试检测文件格式：JSON 或 CSV
+                const trimmed = fileContent.trim();
+
+                // 如果以 { 开头，尝试解析为 JSON
+                if (trimmed.startsWith('{')) {
+                    try {
+                        const data = JSON.parse(trimmed);
+                        if (!data.dimensions || !data.scores) {
+                            alert("JSON 文件格式不正确");
+                            return;
+                        }
+                        setName(data.name || "");
+                        setAvatar(data.avatar || null);
+                        setDimensions(data.dimensions);
+                        setScores(data.scores);
+                        setHistory(data.history || []);
+                        if (data.systemTags) setSystemTags(data.systemTags);
+                        if (data.recentTags) setRecentTags(data.recentTags);
+                        saveData(data.scores, data.history, data.dimensions, data.name, data.avatar, data.systemTags, data.recentTags);
+                        setStep(4);
+                        setModalType(null);
+                        alert("JSON 数据导入成功！");
+                        return;
+                    } catch (e) {
+                        alert("JSON 解析失败，请检查文件是否损坏");
                         return;
                     }
-                    setName(data.name || "");
-                    setAvatar(data.avatar || null);
-                    setDimensions(data.dimensions);
-                    setScores(data.scores);
-                    setHistory(data.history || []);
-                    saveData(data.scores, data.history, data.dimensions, data.name, data.avatar);
+                }
+
+                // 否则尝试解析为 CSV（格式：日期,时间,维度,内容,获得积分）
+                try {
+                    const lines = trimmed.split('\n').filter(line => line.trim());
+                    if (lines.length < 2) {
+                        alert("CSV 文件内容太少");
+                        return;
+                    }
+
+                    // 检查表头
+                    const header = lines[0].replace(/^\uFEFF/, ''); // 移除 BOM
+                    if (!header.includes('维度') && !header.includes('内容') && !header.includes('积分')) {
+                        alert("CSV 格式不正确，需要包含：日期,时间,维度,内容,获得积分");
+                        return;
+                    }
+
+                    // 解析数据行
+                    const importedHistory = [];
+                    const dimScoresMap = {}; // 用于累积各维度分数
+
+                    for (let i = 1; i < lines.length; i++) {
+                        const line = lines[i].trim();
+                        if (!line) continue;
+
+                        // 解析 CSV 行，处理引号中的逗号
+                        const parts = [];
+                        let current = '';
+                        let inQuotes = false;
+                        for (const char of line) {
+                            if (char === '"') {
+                                inQuotes = !inQuotes;
+                            } else if (char === ',' && !inQuotes) {
+                                parts.push(current.trim());
+                                current = '';
+                            } else {
+                                current += char;
+                            }
+                        }
+                        parts.push(current.trim());
+
+                        if (parts.length >= 5) {
+                            const [dateStr, timeStr, dimName, content, ptsStr] = parts;
+                            const pts = parseInt(ptsStr) || 1;
+
+                            // 解析日期时间
+                            let timestamp;
+                            try {
+                                // 尝试解析中文日期格式 "2024/1/15" 或 "2024-1-15"
+                                const dateNorm = dateStr.replace(/\//g, '-');
+                                const timeNorm = timeStr || '12:00:00';
+                                timestamp = new Date(`${dateNorm} ${timeNorm}`).getTime();
+                                if (isNaN(timestamp)) timestamp = Date.now();
+                            } catch {
+                                timestamp = Date.now();
+                            }
+
+                            // 创建历史记录
+                            const record = {
+                                id: `imp_${Date.now()}_${i}`,
+                                dimName: dimName || '未知',
+                                text: content.replace(/""/g, '"'), // 还原转义的引号
+                                pts: pts,
+                                timestamp: timestamp,
+                                tags: []
+                            };
+                            importedHistory.push(record);
+
+                            // 累积分数
+                            if (!dimScoresMap[dimName]) {
+                                dimScoresMap[dimName] = 0;
+                            }
+                            dimScoresMap[dimName] += pts;
+                        }
+                    }
+
+                    if (importedHistory.length === 0) {
+                        alert("CSV 文件中没有找到有效数据");
+                        return;
+                    }
+
+                    // 合并到现有数据
+                    const mergedHistory = [...history, ...importedHistory];
+
+                    // 更新分数（将导入的分数加到现有维度上）
+                    const newScores = [...scores];
+                    dimensions.forEach((dim, idx) => {
+                        if (dimScoresMap[dim.name]) {
+                            newScores[idx] = (newScores[idx] || 0) + dimScoresMap[dim.name];
+                        }
+                    });
+
+                    setHistory(mergedHistory);
+                    setScores(newScores);
+                    saveData(newScores, mergedHistory, dimensions, name, avatar, systemTags, recentTags);
                     setStep(4);
                     setModalType(null);
-                    alert("数据导入成功！");
+                    alert(`CSV 导入成功！共恢复 ${importedHistory.length} 条记录`);
+
                 } catch (e) {
-                    alert("解析失败，请检查文件是否损坏");
+                    console.error("CSV parse error:", e);
+                    alert("CSV 解析失败，请检查文件格式");
                 }
             };
 
