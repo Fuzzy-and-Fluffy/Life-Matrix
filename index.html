@@ -1243,7 +1243,8 @@
                             if (data.history) setHistory(data.history);
                             if (data.systemTags) setSystemTags(data.systemTags);
                             if (data.recentTags) setRecentTags(data.recentTags);
-                            if (data.name && data.scores && data.scores.length > 0) {
+                            // 有 dimensions 就说明是老用户，跳转到雷达图
+                            if (data.dimensions && data.dimensions.length > 0) {
                                 setStep(4);
                             }
                         }
@@ -1266,7 +1267,7 @@
                 if (saved) {
                     try {
                         const data = JSON.parse(saved);
-                        if (data && data.scores && data.scores.length > 0) {
+                        if (data && data.dimensions && data.dimensions.length > 0) {
                             setAuthLoading(false);
                             return;
                         }
@@ -1317,8 +1318,9 @@
                             if (cloudData.systemTags) setSystemTags(cloudData.systemTags);
                             if (cloudData.recentTags) setRecentTags(cloudData.recentTags);
 
-                            // 关键：如果云端有用户数据，直接跳转到雷达图
-                            if (cloudData.name && cloudData.scores && cloudData.scores.length > 0) {
+                            // 关键：如果云端有用户配置(dimensions)，直接跳转到雷达图
+                            // 只要有 dimensions 就说明是老用户，即使 scores 为空也跳转
+                            if (cloudData.dimensions && cloudData.dimensions.length > 0) {
                                 setStep(4);
                             }
                             // 同步到 localStorage
