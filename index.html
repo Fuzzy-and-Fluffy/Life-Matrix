@@ -1520,6 +1520,12 @@
                 // 尝试检测文件格式：JSON 或 CSV
                 const trimmed = fileContent.trim();
 
+                // 检测 Excel xlsx 文件（二进制格式，以 PK 开头）
+                if (trimmed.startsWith('PK') || trimmed.includes('[Content_Types].xml')) {
+                    alert("检测到 Excel 文件格式 (.xlsx)\n\n请在 Excel 中打开文件，然后另存为 CSV 格式：\n文件 → 另存为 → 选择 \"CSV UTF-8 (逗号分隔)\"");
+                    return;
+                }
+
                 // 如果以 { 开头，尝试解析为 JSON
                 if (trimmed.startsWith('{')) {
                     try {
