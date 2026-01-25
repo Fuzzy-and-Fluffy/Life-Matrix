@@ -1548,16 +1548,25 @@
 
                 // 否则尝试解析为 CSV（格式：日期,时间,维度,内容,获得积分）
                 try {
-                    const lines = trimmed.split('\n').filter(line => line.trim());
+                    // 标准化换行符，处理 Windows 和 Mac 的不同格式
+                    const normalizedContent = trimmed.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+                    const lines = normalizedContent.split('\n').filter(line => line.trim());
                     if (lines.length < 2) {
                         alert("CSV 文件内容太少");
                         return;
                     }
 
-                    // 检查表头
-                    const header = lines[0].replace(/^\uFEFF/, ''); // 移除 BOM
-                    if (!header.includes('维度') && !header.includes('内容') && !header.includes('积分')) {
-                        alert("CSV 格式不正确，需要包含：日期,时间,维度,内容,获得积分");
+                    // 检查表头 - 移除 BOM 和其他隐藏字符
+                    const header = lines[0].replace(/^\uFEFF/, '').replace(/[\x00-\x1F]/g, '').trim();
+                    console.log("CSV Header:", header); // 调试用
+
+                    // 更宽松的检测：只要包含任意一个关键字就认为是有效 CSV
+                    const isValidCSV = header.includes('日期') ||
+                        header.includes('维度') ||
+                        header.includes('内容') ||
+                        header.includes('积分');
+                    if (!isValidCSV) {
+                        alert("CSV 格式不正确，需要包含：日期,时间,维度,内容,获得积分\n检测到的表头: " + header);
                         return;
                     }
 
