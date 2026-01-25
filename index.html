@@ -1326,7 +1326,18 @@
                             // 同步到 localStorage
                             localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData));
                         } else if (localTime > cloudTime && localHasData) {
-                            // 本地数据更新，同步到云端
+                            // 本地数据更新，但要补全缺失的 name/avatar
+                            // 如果本地缺少 name/avatar，从云端补全
+                            if (!localData.name && cloudData.name) {
+                                setName(cloudData.name);
+                                localData.name = cloudData.name;
+                            }
+                            if (!localData.avatar && cloudData.avatar) {
+                                setAvatar(cloudData.avatar);
+                                localData.avatar = cloudData.avatar;
+                            }
+                            // 更新 localStorage 和云端
+                            localStorage.setItem(STORAGE_KEY, JSON.stringify(localData));
                             await db.collection('users').doc(userId).set(localData, { merge: true });
                         }
                     } else if (localStorage.getItem(STORAGE_KEY)) {
