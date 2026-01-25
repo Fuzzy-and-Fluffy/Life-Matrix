@@ -1326,8 +1326,9 @@
                             // 同步到 localStorage
                             localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData));
                         } else if (localTime > cloudTime && localHasData) {
-                            // 本地数据更新，但要补全缺失的 name/avatar
-                            // 如果本地缺少 name/avatar，从云端补全
+                            // 本地数据更新 - 智能合并，防止数据丢失
+
+                            // 1. 先从云端补全本地缺失的 name/avatar
                             if (!localData.name && cloudData.name) {
                                 setName(cloudData.name);
                                 localData.name = cloudData.name;
@@ -1336,6 +1337,25 @@
                                 setAvatar(cloudData.avatar);
                                 localData.avatar = cloudData.avatar;
                             }
+
+                            // 2. 关键：如果本地 history 是空的但云端有数据，保留云端的
+                            if ((!localData.history || localData.history.length === 0) &&
+                                cloudData.history && cloudData.history.length > 0) {
+                                localData.history = cloudData.history;
+                                setHistory(cloudData.history);
+                            }
+
+                            // 3. 如果本地 scores 全是0或空，但云端有非零数据，保留云端的
+                            const localScoresEmpty = !localData.scores ||
+                                localData.scores.length === 0 ||
+                                localData.scores.every(s => s === 0);
+                            const cloudScoresHasData = cloudData.scores &&
+                                cloudData.scores.some(s => s > 0);
+                            if (localScoresEmpty && cloudScoresHasData) {
+                                localData.scores = cloudData.scores;
+                                setScores(cloudData.scores);
+                            }
+
                             // 更新 localStorage 和云端
                             localStorage.setItem(STORAGE_KEY, JSON.stringify(localData));
                             await db.collection('users').doc(userId).set(localData, { merge: true });
