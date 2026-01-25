@@ -1259,19 +1259,33 @@
             useEffect(() => {
                 // 立即加载本地缓存数据，不等待 Firebase
                 loadFromLocalStorage();
-                // 数据已加载，立即关闭 loading
-                setAuthLoading(false);
+
+                // 只有在本地有数据时才立即关闭 loading
+                // 如果本地没数据，等 Firebase 认证后再决定
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    try {
+                        const data = JSON.parse(saved);
+                        if (data && data.scores && data.scores.length > 0) {
+                            setAuthLoading(false);
+                            return;
+                        }
+                    } catch (e) { }
+                }
+                // 本地没有有效数据，保持 loading 状态等待 Firebase
             }, []);
 
-            // --- Firebase Auth 监听（后台静默同步）---
+            // --- Firebase Auth 监听 ---
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(async (user) => {
                     setCurrentUser(user);
 
                     if (user) {
-                        // 用户已登录，后台静默同步 Firestore（不阻塞 UI）
-                        syncWithFirestore(user.uid);
+                        // 用户已登录，需要等待 Firestore 同步完成
+                        await syncWithFirestore(user.uid);
                     }
+                    // 同步完成后关闭 loading
+                    setAuthLoading(false);
                 });
                 return () => unsubscribe();
             }, []);
