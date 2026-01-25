@@ -1306,7 +1306,7 @@
                         const localTime = localData.updatedAt ? new Date(localData.updatedAt).getTime() : 0;
 
                         // 如果云端有数据且本地没有数据，或者云端数据更新
-                        const localHasData = localData.scores && localData.scores.length > 0;
+                        const localHasData = localData.dimensions && localData.dimensions.length > 0;
 
                         if (!localHasData || cloudTime > localTime) {
                             // 从云端加载数据
@@ -1332,7 +1332,7 @@
                     } else if (localStorage.getItem(STORAGE_KEY)) {
                         // Firestore 没有数据，上传本地数据
                         const localData = JSON.parse(localStorage.getItem(STORAGE_KEY));
-                        if (localData && localData.scores) {
+                        if (localData && localData.dimensions && localData.dimensions.length > 0) {
                             await db.collection('users').doc(userId).set(localData, { merge: true });
                         }
                     }
