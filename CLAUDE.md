@@ -1,6 +1,6 @@
 # CLAUDE.md - AI Assistant Guide for Life-Matrix
 
-**Last Updated**: 2026-01-12
+**Last Updated**: 2026-01-26
 **Repository**: Fuzzy-and-Fluffy/Life-Matrix
 **Primary Language**: Chinese (Simplified)
 **Architecture**: Single-file React PWA
@@ -14,12 +14,13 @@
 3. [File Structure](#file-structure)
 4. [Development Workflow](#development-workflow)
 5. [Code Conventions](#code-conventions)
-6. [Data Models](#data-models)
-7. [Common Tasks](#common-tasks)
-8. [Testing Guidelines](#testing-guidelines)
-9. [Git Workflow](#git-workflow)
-10. [Deployment](#deployment)
-11. [Troubleshooting](#troubleshooting)
+6. [Coding Standards & Best Practices](#coding-standards--best-practices)
+7. [Data Models](#data-models)
+8. [Common Tasks](#common-tasks)
+9. [Testing Guidelines](#testing-guidelines)
+10. [Git Workflow](#git-workflow)
+11. [Deployment](#deployment)
+12. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -269,6 +270,112 @@ try {
   return getDefaultState();
 }
 ```
+
+---
+
+## Coding Standards & Best Practices
+
+### 1. 核心原则 (Core Principles)
+
+- **KISS (Keep It Simple, Stupid)**: 优先选择最简单的实现方式。单文件架构本身就是 KISS 的最佳实践。除非绝对必要，否则不要引入复杂的抽象或设计模式。
+- **DRY (Don't Repeat Yourself)**: 提取重复的逻辑到函数或组件中，但要注意不要过度抽象导致代码难以阅读。
+- **单一职责 (Single Responsibility)**: 一个函数或组件只做一件事。如果一个函数超过 50 行，请考虑拆分。
+- **函数式优先 (Functional Preference)**: 优先使用纯函数和 React Functional Components。避免副作用（Side Effects）和全局状态变更。
+
+### 2. 代码风格与质量 (Code Style & Quality)
+
+- **命名规范**:
+  - 变量名必须是描述性的 (Descriptive)。
+  - ❌ `const d = new Date()`
+  - ✅ `const creationDate = new Date()`
+  - Boolean 变量应以 `is`, `has`, `should`, `can` 开头 (e.g., `isVisible`, `hasLoaded`).
+  
+- **尽早返回 (Early Returns)**: 使用 Guard Clauses 避免深层嵌套。
+  - ❌ `if (user) { if (active) { ... } }`
+  - ✅ `if (!user) return; if (!active) return; ...`
+
+- **类型注释 (JSDoc)**: 由于项目使用纯 JavaScript，使用 JSDoc 注释描述复杂函数的参数类型：
+  ```javascript
+  /**
+   * 计算用户等级
+   * @param {number} score - 用户得分
+   * @returns {number} 等级数值
+   */
+  const calculateLevel = (score) => Math.floor(-2 + Math.sqrt(4 + score));
+  ```
+
+- **代码格式**:
+  - 优先使用 `const`，必要时使用 `let`，禁止使用 `var`
+  - 使用 `async/await` 代替 `.then().catch()` 链式调用
+  - 字符串优先使用模板字符串 `` `${variable}` ``
+
+### 3. 错误处理与日志 (Error Handling & Logging)
+
+- **防御性编程**: 永远不要假设输入是正确的。验证所有外部数据（API 响应、用户输入、文件导入）。
+
+- **不要吞掉错误**:
+  - ❌ `try { ... } catch (e) {}` (绝对禁止)
+  - ✅ `try { ... } catch (e) { console.error('操作失败:', e); alert('操作失败，请重试'); }`
+
+- **调试日志规范**:
+  ```javascript
+  // 开发调试时可以使用 console.log
+  console.log("CSV Header:", header); // 调试用
+  
+  // 生产环境建议使用条件日志
+  const DEBUG = false; // 发布前设为 false
+  if (DEBUG) console.log('[DEBUG] State update:', { name, scores });
+  
+  // 错误日志必须保留
+  console.error('保存失败:', error); // 这个要保留
+  ```
+
+### 4. 安全性 (Security)
+
+- **Firebase 配置说明**: Firebase API Key 在代码中是公开的，这是设计如此。安全性由 Firestore Security Rules 保证，而非 API Key 保密。
+
+- **输入验证**: 验证所有用户输入和文件导入。参考 `handleImport` 函数的实现。
+
+- **XSS 防护**: 
+  - ✅ React 默认转义是安全的：`<div>{userInput}</div>`
+  - ❌ 避免使用 `dangerouslySetInnerHTML`
+
+- **环境变量**: 本项目无需环境变量，所有配置直接在代码中。如果未来需要私密配置，使用 Vercel 环境变量。
+
+### 5. 技术栈特定规范 (Tech Stack Specifics)
+
+#### React (via CDN, no build process)
+- 使用 Functional Components 和 Hooks
+- 所有 React API 通过全局对象访问：`React.useState`, `React.useEffect` 等
+- 组件定义使用 `const ComponentName = (props) => { ... }`
+- Props 通过解构获取：`const Modal = ({ onClose, title, children }) => { ... }`
+
+#### Tailwind CSS
+- 所有样式使用 Tailwind 工具类
+- 颜色方案存储为字符串：`{ color: "bg-emerald-400", text: "text-emerald-500" }`
+- 响应式设计使用 Tailwind 断点：`md:`, `lg:`, etc.
+
+#### Firebase
+- 使用 compat 版本 SDK（兼容旧语法）
+- 所有 Firebase 操作包裹在 try-catch 中
+- 同步状态反馈给用户：`setSyncStatus('syncing' | 'synced' | 'offline')`
+
+#### SheetJS (XLSX)
+- 用于 Excel 文件解析导入
+- 通过 CDN 引入，使用全局 `XLSX` 对象
+- 转换 Excel 为 CSV 后再处理：`XLSX.utils.sheet_to_csv(worksheet)`
+
+### 6. AI 协作指令 (Instructions for AI)
+
+- **不要过度重构**: 仅在修改现有代码块时应用这些规则，不要为了符合规则而重写整个未触及的文件。
+
+- **解释你的决定**: 如果你选择了一种复杂的实现方式，请在注释中解释"为什么"。
+
+- **引用已有库**: 优先使用项目中已加载的库（React、Firebase、SheetJS、Tailwind），不要引入新的 CDN 依赖，除非必须且已与用户确认。
+
+- **保持单文件架构**: 不要尝试将代码拆分为多个文件，不要建议使用 npm 包。
+
+- **维护中文界面**: 所有用户可见的文本必须是简体中文。
 
 ---
 
@@ -1159,6 +1266,7 @@ git push --force
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-01-26 | 1.1.0 | 添加 Coding Standards & Best Practices 章节；新增 SheetJS 技术栈规范 |
 | 2026-01-12 | 1.0.0 | Initial CLAUDE.md creation |
 
 ---

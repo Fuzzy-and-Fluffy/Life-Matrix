@@ -1166,6 +1166,230 @@
             );
         };
 
+        // AI 周期回顾模态框
+        const AIReviewModal = ({ onClose, history, dimensions }) => {
+            const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
+            const [period, setPeriod] = useState('week');
+            const [loading, setLoading] = useState(false);
+            const [result, setResult] = useState('');
+            const [error, setError] = useState('');
+
+            const periods = [
+                { id: 'week', label: '本周' },
+                { id: 'last_week', label: '上周' },
+                { id: 'month', label: '本月' },
+                { id: 'last_month', label: '上月' },
+                { id: 'year', label: '今年' },
+                { id: 'all', label: '全部' }
+            ];
+
+            // 根据时间范围筛选记录
+            const getFilteredRecords = () => {
+                if (!history || history.length === 0) return [];
+                const now = new Date();
+                const startOfWeek = new Date(now);
+                startOfWeek.setDate(now.getDate() - now.getDay());
+                startOfWeek.setHours(0, 0, 0, 0);
+
+                const startOfLastWeek = new Date(startOfWeek);
+                startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
+                const endOfLastWeek = new Date(startOfWeek);
+                endOfLastWeek.setMilliseconds(-1);
+
+                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                const endOfLastMonth = new Date(startOfMonth);
+                endOfLastMonth.setMilliseconds(-1);
+
+                const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+                return history.filter(h => {
+                    const ts = new Date(h.timestamp);
+                    switch (period) {
+                        case 'week': return ts >= startOfWeek;
+                        case 'last_week': return ts >= startOfLastWeek && ts <= endOfLastWeek;
+                        case 'month': return ts >= startOfMonth;
+                        case 'last_month': return ts >= startOfLastMonth && ts <= endOfLastMonth;
+                        case 'year': return ts >= startOfYear;
+                        case 'all': default: return true;
+                    }
+                });
+            };
+
+            const handleSaveKey = () => {
+                localStorage.setItem('gemini_api_key', apiKey);
+            };
+
+            const handleGenerate = async () => {
+                if (!apiKey.trim()) {
+                    setError('请先输入 Google Gemini API Key');
+                    return;
+                }
+                const records = getFilteredRecords();
+                if (records.length === 0) {
+                    setError('该时段没有记录');
+                    return;
+                }
+
+                setLoading(true);
+                setError('');
+                setResult('');
+                handleSaveKey();
+
+                const periodLabel = periods.find(p => p.id === period)?.label || '选定时段';
+                const activeDimNames = dimensions.filter(d => d.active).map(d => d.name);
+
+                const dataForAI = records.map(r => ({
+                    dimension: r.dimName,
+                    content: r.text,
+                    tags: r.tags || [],
+                    date: new Date(r.timestamp).toLocaleDateString('zh-CN')
+                }));
+
+                const prompt = `你是一位温暖、富有洞察力的生活教练。请根据用户"${periodLabel}"的生活记录，生成一份周期回顾与总结。
+
+## 用户的维度领域
+${activeDimNames.join('、')}
+
+## 用户的记录数据 (JSON)
+${JSON.stringify(dataForAI, null, 2)}
+
+## 输出要求
+请用 Markdown 格式输出，包含以下部分：
+1. **${periodLabel}概览**：简要总结用户在各维度的活跃程度。
+2. **维度平衡分析**：哪些维度投入较多？哪些被忽略？平衡建议。
+3. **亮点时刻**：从记录中挑出几个值得庆祝的成就或进步。
+4. **下一步建议**：基于分析，给出 2-3 条具体可行的行动建议。
+
+语气亲切鼓励，避免说教。`;
+
+                try {
+                    const response = await fetch(
+                        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{ parts: [{ text: prompt }] }]
+                            })
+                        }
+                    );
+                    const data = await response.json();
+                    if (data.error) {
+                        throw new Error(data.error.message || 'API Error');
+                    }
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '无法生成回顾';
+                    setResult(text);
+                } catch (err) {
+                    setError(`生成失败: ${err.message}`);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            // 简易 Markdown 渲染
+            const renderMarkdown = (md) => {
+                if (!md) return null;
+                const lines = md.split('\n');
+                return lines.map((line, i) => {
+                    if (line.startsWith('## ')) return <h2 key={i} className="text-base font-black text-slate-700 mt-4 mb-2">{line.slice(3)}</h2>;
+                    if (line.startsWith('### ')) return <h3 key={i} className="text-sm font-bold text-slate-600 mt-3 mb-1">{line.slice(4)}</h3>;
+                    if (line.startsWith('**') && line.endsWith('**')) return <p key={i} className="font-bold text-slate-700 my-1">{line.slice(2, -2)}</p>;
+                    if (line.startsWith('- ')) return <li key={i} className="ml-4 text-slate-600 text-sm list-disc">{line.slice(2)}</li>;
+                    if (line.match(/^\d+\.\s/)) return <li key={i} className="ml-4 text-slate-600 text-sm list-decimal">{line.replace(/^\d+\.\s/, '')}</li>;
+                    if (line.trim() === '') return <div key={i} className="h-2" />;
+                    const parts = line.split(/\*\*(.+?)\*\*/g);
+                    return <p key={i} className="text-slate-600 text-sm my-0.5">{parts.map((p, j) => j % 2 === 1 ? <strong key={j}>{p}</strong> : p)}</p>;
+                });
+            };
+
+            const filteredCount = getFilteredRecords().length;
+
+            return (
+                <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fade-in">
+                    <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+                        {/* Header */}
+                        <div className="p-6 pb-4 border-b border-slate-100 flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                                <span className="p-2 bg-violet-100 rounded-xl"><Icon name="sparkle" size={20} className="text-violet-500" /></span>
+                                <h3 className="text-lg font-black text-slate-800">AI 周期回顾</h3>
+                            </div>
+                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><Icon name="close" /></button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 overflow-y-auto p-6 space-y-5 no-scrollbar">
+                            {/* API Key */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Google Gemini API Key</label>
+                                <input
+                                    type="password"
+                                    value={apiKey}
+                                    onChange={e => setApiKey(e.target.value)}
+                                    placeholder="AIzaSy..."
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-violet-100"
+                                />
+                                <p className="text-[9px] text-slate-300">Key 仅保存在本地浏览器，不会上传</p>
+                            </div>
+
+                            {/* Period Selection */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">选择时间范围</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {periods.map(p => (
+                                        <button
+                                            key={p.id}
+                                            onClick={() => setPeriod(p.id)}
+                                            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${period === p.id
+                                                ? 'bg-violet-500 text-white shadow-sm'
+                                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                                }`}
+                                        >
+                                            {p.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-[10px] text-slate-400">该时段共 <span className="font-bold text-violet-500">{filteredCount}</span> 条记录</p>
+                            </div>
+
+                            {/* Generate Button */}
+                            <button
+                                onClick={handleGenerate}
+                                disabled={loading}
+                                className="w-full bg-gradient-to-r from-violet-500 to-purple-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:shadow-xl active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                {loading ? (
+                                    <>
+                                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                                        正在生成...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Icon name="sparkle" size={16} />
+                                        生成 AI 回顾
+                                    </>
+                                )}
+                            </button>
+
+                            {/* Error */}
+                            {error && (
+                                <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-600 text-xs font-bold">
+                                    {error}
+                                </div>
+                            )}
+
+                            {/* Result */}
+                            {result && (
+                                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 space-y-1">
+                                    {renderMarkdown(result)}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // ==========================================
         // 4. 主逻辑 App
         // ==========================================
@@ -1266,6 +1490,7 @@
             const [currentUser, setCurrentUser] = useState(null);
             const [authLoading, setAuthLoading] = useState(true);
             const [syncStatus, setSyncStatus] = useState('idle'); // 'idle' | 'syncing' | 'synced' | 'offline'
+            const [isNewUser, setIsNewUser] = useState(false); // 是否为新用户（无云端数据）
 
             // Modal States
             const [modalType, setModalType] = useState(null); // 'record' | 'calendar' | 'settings' | 'auth' | null
@@ -1350,6 +1575,17 @@
                         const cloudData = doc.data();
                         const localData = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
 
+                        // 检查云端是否有有效数据（dimensions）
+                        const cloudHasData = cloudData.dimensions && cloudData.dimensions.length > 0;
+
+                        // 关键：如果云端有数据，说明是返回用户
+                        if (cloudHasData) {
+                            setIsNewUser(false);
+                        } else {
+                            // 云端无有效数据，说明是新用户
+                            setIsNewUser(true);
+                        }
+
                         // 比较更新时间，使用较新的数据
                         const cloudTime = cloudData.updatedAt ? new Date(cloudData.updatedAt).getTime() : 0;
                         const localTime = localData.updatedAt ? new Date(localData.updatedAt).getTime() : 0;
@@ -1367,9 +1603,8 @@
                             if (cloudData.systemTags) setSystemTags(cloudData.systemTags);
                             if (cloudData.recentTags) setRecentTags(cloudData.recentTags);
 
-                            // 关键：如果云端有用户配置(dimensions)，直接跳转到雷达图
-                            // 只要有 dimensions 就说明是老用户，即使 scores 为空也跳转
-                            if (cloudData.dimensions && cloudData.dimensions.length > 0) {
+                            // 返回用户直接跳转到雷达图
+                            if (cloudHasData) {
                                 setStep(4);
                             }
                             // 同步到 localStorage
@@ -1409,11 +1644,19 @@
                             localStorage.setItem(STORAGE_KEY, JSON.stringify(localData));
                             await db.collection('users').doc(userId).set(localData, { merge: true });
                         }
-                    } else if (localStorage.getItem(STORAGE_KEY)) {
-                        // Firestore 没有数据，上传本地数据
-                        const localData = JSON.parse(localStorage.getItem(STORAGE_KEY));
-                        if (localData && localData.dimensions && localData.dimensions.length > 0) {
-                            await db.collection('users').doc(userId).set(localData, { merge: true });
+                    } else {
+                        // Firestore 没有该用户的文档，说明是全新用户
+                        setIsNewUser(true);
+
+                        // 如果本地有数据，上传到云端
+                        if (localStorage.getItem(STORAGE_KEY)) {
+                            const localData = JSON.parse(localStorage.getItem(STORAGE_KEY));
+                            if (localData && localData.dimensions && localData.dimensions.length > 0) {
+                                await db.collection('users').doc(userId).set(localData, { merge: true });
+                                // 本地有数据说明这其实是老用户，重置 isNewUser
+                                setIsNewUser(false);
+                                setStep(4);
+                            }
                         }
                     }
                     setSyncStatus('synced');
@@ -1927,14 +2170,14 @@
                 </div>
             );
 
-            // 如果用户已登录但是新用户(没有scores)，显示设置页面
-            if (step === 1 && currentUser) return (
+            // 仅对新用户（没有云端数据）显示设置页面
+            if (step === 1 && currentUser && isNewUser) return (
                 <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
                     <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-xl shadow-slate-200/50 text-center animate-fade-in">
                         <div className="mb-8 space-y-4">
-                            <div className="inline-flex p-4 bg-emerald-50 rounded-2xl text-emerald-500 shadow-inner"><Icon name="check" size={32} /></div>
-                            <h1 className="text-2xl font-black text-slate-800 tracking-tight">欢迎回来！</h1>
-                            <p className="text-slate-400 text-sm">设置你的个人资料开始旅程。</p>
+                            <div className="inline-flex p-4 bg-sky-50 rounded-2xl text-sky-500 shadow-inner"><Icon name="sparkle" size={32} /></div>
+                            <h1 className="text-2xl font-black text-slate-800 tracking-tight">开始设置</h1>
+                            <p className="text-slate-400 text-sm">设置你的个人资料，开始你的旅程。</p>
                         </div>
                         <div className="space-y-6 flex flex-col items-center">
                             <div className="relative cursor-pointer group" onClick={() => fileInputRef.current.click()}>
