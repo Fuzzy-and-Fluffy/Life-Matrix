@@ -693,24 +693,45 @@
                 if (!file) return;
 
                 const fileName = file.name.toLowerCase();
+                const fileType = file.type.toLowerCase();
 
-                // 如果是 Excel 文件，使用 SheetJS 解析
-                if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+                // 调试信息
+                console.log("File name:", file.name);
+                console.log("File type:", file.type);
+                console.log("File size:", file.size);
+
+                // 检测 Excel 文件：通过扩展名或 MIME 类型
+                const isExcel = fileName.endsWith('.xlsx') ||
+                    fileName.endsWith('.xls') ||
+                    fileType.includes('spreadsheet') ||
+                    fileType.includes('excel') ||
+                    fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+                    fileType === 'application/vnd.ms-excel';
+
+                console.log("Is Excel file:", isExcel);
+
+                if (isExcel) {
                     const reader = new FileReader();
                     reader.onload = (ev) => {
                         try {
+                            console.log("Reading Excel file as ArrayBuffer...");
                             const data = new Uint8Array(ev.target.result);
                             const workbook = XLSX.read(data, { type: 'array' });
                             // 获取第一个工作表
                             const sheetName = workbook.SheetNames[0];
+                            console.log("Sheet name:", sheetName);
                             const worksheet = workbook.Sheets[sheetName];
                             // 转换为 CSV 文本
                             const csvContent = XLSX.utils.sheet_to_csv(worksheet);
+                            console.log("CSV preview:", csvContent.substring(0, 200));
                             onImport(csvContent);
                         } catch (err) {
                             console.error("Excel parse error:", err);
-                            alert("Excel 文件解析失败，请检查文件是否损坏");
+                            alert("Excel 文件解析失败: " + err.message);
                         }
+                    };
+                    reader.onerror = (err) => {
+                        console.error("FileReader error:", err);
                     };
                     reader.readAsArrayBuffer(file);
                 } else {
