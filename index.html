@@ -1548,6 +1548,30 @@ ${JSON.stringify(dataForAI, null, 2)}
                 }
             };
 
+            // --- 数据健康检查：确保关键字段不丢失 ---
+            const ensureDataIntegrity = (data, currentState) => {
+                const repaired = { ...data };
+                let hasRepairs = false;
+
+                // 确保 name 和 avatar 不丢失
+                if (!repaired.name && currentState.name) {
+                    console.log('[Data Integrity] 修复丢失的 name:', currentState.name);
+                    repaired.name = currentState.name;
+                    hasRepairs = true;
+                }
+                if (!repaired.avatar && currentState.avatar) {
+                    console.log('[Data Integrity] 修复丢失的 avatar');
+                    repaired.avatar = currentState.avatar;
+                    hasRepairs = true;
+                }
+
+                if (hasRepairs) {
+                    console.log('[Data Integrity] 数据已修复');
+                }
+
+                return repaired;
+            };
+
             // --- 标签迁移函数：识别历史数据中的标签 ---
             const migrateHistoryTags = (historyData) => {
                 if (!historyData || historyData.length === 0) return historyData;
@@ -1637,39 +1661,61 @@ ${JSON.stringify(dataForAI, null, 2)}
                         const localHasData = localData.dimensions && localData.dimensions.length > 0;
 
                         if (!localHasData || cloudTime > localTime) {
-                            // 从云端加载数据
-                            if (cloudData.name) setName(cloudData.name);
-                            if (cloudData.avatar) setAvatar(cloudData.avatar);
-                            if (cloudData.dimensions) setDimensions(cloudData.dimensions);
-                            if (cloudData.scores) setScores(cloudData.scores);
+                            // 从云端加载数据 - 使用智能合并策略，保护本地非空数据
+
+                            // 智能合并：优先使用非空值
+                            const mergedData = {
+                                name: cloudData.name || localData.name || name,
+                                avatar: cloudData.avatar || localData.avatar || avatar,
+                                dimensions: cloudData.dimensions || dimensions,
+                                scores: cloudData.scores || scores,
+                                history: cloudData.history || history,
+                                systemTags: cloudData.systemTags || systemTags,
+                                recentTags: cloudData.recentTags || recentTags,
+                                updatedAt: cloudData.updatedAt || new Date().toISOString()
+                            };
+
+                            // 设置 state
+                            setName(mergedData.name);
+                            setAvatar(mergedData.avatar);
+                            setDimensions(mergedData.dimensions);
+                            setScores(mergedData.scores);
 
                             // 迁移云端历史记录中的标签
-                            if (cloudData.history) {
-                                const migratedHistory = migrateHistoryTags(cloudData.history);
+                            if (mergedData.history) {
+                                const migratedHistory = migrateHistoryTags(mergedData.history);
                                 setHistory(migratedHistory);
-                                cloudData.history = migratedHistory;
+                                mergedData.history = migratedHistory;
                             }
 
-                            if (cloudData.systemTags) setSystemTags(cloudData.systemTags);
-                            if (cloudData.recentTags) setRecentTags(cloudData.recentTags);
+                            setSystemTags(mergedData.systemTags);
+                            setRecentTags(mergedData.recentTags);
 
                             // 返回用户直接跳转到雷达图
                             if (cloudHasData) {
                                 setStep(4);
                             }
-                            // 同步到 localStorage
-                            localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData));
+
+                            // 保存合并后的数据到 localStorage
+                            localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedData));
                         } else if (localTime > cloudTime && localHasData) {
                             // 本地数据更新 - 智能合并，防止数据丢失
 
-                            // 1. 先从云端补全本地缺失的 name/avatar
+                            // 1. 智能合并 name/avatar：优先使用非空值
                             if (!localData.name && cloudData.name) {
                                 setName(cloudData.name);
                                 localData.name = cloudData.name;
+                            } else if (!localData.name && !cloudData.name && name) {
+                                // 如果本地和云端都没有，但当前 state 有，使用 state 的值
+                                localData.name = name;
                             }
+
                             if (!localData.avatar && cloudData.avatar) {
                                 setAvatar(cloudData.avatar);
                                 localData.avatar = cloudData.avatar;
+                            } else if (!localData.avatar && !cloudData.avatar && avatar) {
+                                // 如果本地和云端都没有，但当前 state 有，使用 state 的值
+                                localData.avatar = avatar;
                             }
 
                             // 2. 关键：如果本地 history 是空的但云端有数据，保留云端的
@@ -1730,16 +1776,19 @@ ${JSON.stringify(dataForAI, null, 2)}
                     updatedAt: new Date().toISOString()
                 };
 
+                // 数据完整性检查
+                const verifiedData = ensureDataIntegrity(data, { name, avatar });
+
                 // 始终保存到 localStorage
                 try {
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(verifiedData));
                 } catch (e) { console.error("LocalStorage save error", e); }
 
                 // 如果已登录，同步到 Firestore
                 if (currentUser) {
                     try {
                         setSyncStatus('syncing');
-                        await db.collection('users').doc(currentUser.uid).set(data, { merge: true });
+                        await db.collection('users').doc(currentUser.uid).set(verifiedData, { merge: true });
                         setSyncStatus('synced');
                     } catch (e) {
                         console.error("Firestore save error", e);
