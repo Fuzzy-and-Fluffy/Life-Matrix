@@ -1748,30 +1748,53 @@ ${JSON.stringify(dataForAI, null, 2)}
                     try {
                         const data = JSON.parse(saved);
                         if (data && data.dimensions && data.dimensions.length > 0) {
+                            console.log('[Init] Local data found, showing UI immediately');
                             setAuthLoading(false);
                             return;
                         }
-                    } catch (e) { }
+                    } catch (e) {
+                        console.error('[Init] localStorage parse error:', e);
+                    }
                 }
-                // 本地没有有效数据，保持 loading 状态等待 Firebase
+
+                // 本地没有有效数据，设置超时保护（3秒后强制关闭loading）
+                console.log('[Init] No local data, waiting for Firebase auth (max 3s)');
+                const timeoutId = setTimeout(() => {
+                    console.warn('[Init] Firebase auth timeout, force showing UI');
+                    setAuthLoading(false);
+                }, 3000);
+
+                return () => clearTimeout(timeoutId);
             }, []);
 
             // --- Firebase Auth 监听 ---
             useEffect(() => {
-                const unsubscribe = auth.onAuthStateChanged(async (user) => {
-                    setCurrentUser(user);
+                let unsubscribe;
 
-                    // 立即关闭 loading，允许界面渲染
+                try {
+                    unsubscribe = auth.onAuthStateChanged(async (user) => {
+                        console.log('[Auth] onAuthStateChanged triggered, user:', user ? user.uid : 'null');
+                        setCurrentUser(user);
+
+                        // 立即关闭 loading，允许界面渲染
+                        setAuthLoading(false);
+
+                        if (user) {
+                            // 后台同步，不阻塞 UI
+                            syncWithFirestore(user.uid).catch(err => {
+                                console.error('[Sync] Background sync failed:', err);
+                            });
+                        }
+                    });
+                } catch (error) {
+                    console.error('[Auth] Firebase auth setup error:', error);
+                    // Firebase 初始化失败，降级到本地模式
                     setAuthLoading(false);
+                }
 
-                    if (user) {
-                        // 后台同步，不阻塞 UI
-                        syncWithFirestore(user.uid).catch(err => {
-                            console.error('Background sync failed:', err);
-                        });
-                    }
-                });
-                return () => unsubscribe();
+                return () => {
+                    if (unsubscribe) unsubscribe();
+                };
             }, []);
 
             // --- 后台静默同步 Firestore ---
