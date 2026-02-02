@@ -1,6 +1,6 @@
 # CLAUDE.md - AI Assistant Guide for Life-Matrix
 
-**Last Updated**: 2026-01-26
+**Last Updated**: 2026-01-29
 **Repository**: Fuzzy-and-Fluffy/Life-Matrix
 **Primary Language**: Chinese (Simplified)
 **Architecture**: Single-file React PWA
@@ -34,6 +34,16 @@
 - **No build process**: Changes are immediately testable in browser
 - **No npm/node_modules**: All dependencies loaded via CDN
 - **Language**: All UI text should be in Chinese (Simplified)
+
+### 🤖 AI Assistant: Quick Workflow
+
+**For each completed feature**:
+1. ✅ Implement, test, commit, and push to feature branch
+2. 📝 Generate PR link and pre-filled details
+3. 🔗 Provide GitHub PR creation link to user
+4. ✨ User creates PR from mobile/web browser
+
+👉 **See [Creating Pull Requests - AI Assistant Workflow](#ai-assistant-workflow-claude-code)** for detailed instructions
 
 ### Technology Stack
 
@@ -738,7 +748,101 @@ git push || sleep 16
 
 ### Creating Pull Requests
 
-Use GitHub CLI (`gh`) to create PRs:
+#### AI Assistant Workflow (Claude Code)
+
+**IMPORTANT**: When working in Claude Code (mobile or web), follow this workflow for EACH completed feature:
+
+**Step 1: Complete the feature**
+- Implement the requested functionality
+- Test thoroughly
+- Commit changes with descriptive message
+- Push to feature branch (`claude/<description>-<session-id>`)
+
+**Step 2: Rebase on main (if main has been updated)**
+```bash
+# Fetch latest main
+git checkout main
+git pull origin main
+
+# Rebase feature branch
+git checkout claude/<description>-<session-id>
+git rebase main
+
+# Force push (only on feature branches)
+git push -f origin claude/<description>-<session-id>
+```
+
+**Step 3: Generate PR link and details**
+```bash
+# Check commits to be merged
+git log origin/main..HEAD --oneline
+
+# Generate GitHub PR URL
+echo "https://github.com/Fuzzy-and-Fluffy/Life-Matrix/compare/main...claude/<description>-<session-id>"
+```
+
+**Step 4: Provide to user**
+
+Provide the user with:
+1. ✅ **GitHub PR creation link** (pre-filled)
+2. 📝 **Suggested PR title** (in Chinese, following conventional commits)
+3. 📋 **Suggested PR description** with:
+   - 问题描述 (Problem description)
+   - 解决方案 (Solution)
+   - 技术细节 (Technical details)
+   - 测试计划 (Test plan)
+   - 影响范围 (Impact scope)
+
+**Example output to user**:
+```markdown
+## 📋 PR 信息
+
+**分支**: `claude/fix-avatar-loss-59wXy`
+**Commit**: `c98bcc9` - 修复头像和名字在数据同步时丢失的问题
+
+**创建 PR 的链接**:
+https://github.com/Fuzzy-and-Fluffy/Life-Matrix/compare/main...claude/fix-avatar-loss-59wXy
+
+---
+
+## 📝 建议的 PR 标题和描述
+
+**标题**:
+fix: 修复头像和名字在数据同步时丢失的问题
+
+**描述**:
+## 问题描述
+用户重新填写头像和名字后，在 PWA 重新登录时数据消失。
+
+## 解决方案
+1. 智能合并策略：优先保留非空值
+2. 多层保护机制
+3. 新增数据完整性检查函数
+
+## 技术细节
+- 修改 syncWithFirestore 函数
+- 在 saveData 中集成完整性检查
+- 更新 Service Worker 至 v3.23
+
+## 测试
+- [x] 本地测试数据同步流程
+- [x] 验证修复有效
+
+点击上面的链接即可创建 PR！🎉
+```
+
+**Why this workflow**:
+- ✅ User can create PR from mobile/web browser
+- ✅ Pre-filled details save time
+- ✅ Clear tracking of each feature
+- ✅ Easy to review and merge
+- ✅ Works on any device
+
+---
+
+#### Traditional Workflow (with GitHub CLI)
+
+If `gh` CLI is available, use this method:
 
 ```bash
 # Check current branch status
@@ -1266,6 +1370,7 @@ git push --force
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-01-29 | 1.2.0 | 添加 AI Assistant PR 创建工作流程；优化移动端/网页端 Claude Code 使用体验 |
 | 2026-01-26 | 1.1.0 | 添加 Coding Standards & Best Practices 章节；新增 SheetJS 技术栈规范 |
 | 2026-01-12 | 1.0.0 | Initial CLAUDE.md creation |
 
