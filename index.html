@@ -1667,7 +1667,8 @@ ${JSON.stringify(dataForAI, null, 2)}
                             if (data.dimensions) setDimensions(data.dimensions);
                             if (data.scores) setScores(data.scores);
 
-                            // 先直接加载历史记录，不执行迁移（迁移会阻塞）
+                            // 直接加载历史记录，不执行迁移
+                            // 标签迁移只在导入或手动触发时执行
                             if (data.history) {
                                 setHistory(data.history);
                             }
@@ -1677,18 +1678,6 @@ ${JSON.stringify(dataForAI, null, 2)}
                             // 有 dimensions 就说明是老用户，跳转到雷达图
                             if (data.dimensions && data.dimensions.length > 0) {
                                 setStep(4);
-                            }
-
-                            // 延迟执行标签迁移，不阻塞界面渲染
-                            if (data.history && data.history.length > 0) {
-                                setTimeout(() => {
-                                    const migratedHistory = migrateHistoryTags(data.history);
-                                    if (migratedHistory !== data.history) {
-                                        setHistory(migratedHistory);
-                                        const updatedData = { ...data, history: migratedHistory, updatedAt: new Date().toISOString() };
-                                        localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedData));
-                                    }
-                                }, 100); // 延迟 100ms 执行，让界面先渲染
                             }
                         }
                     }
@@ -1851,7 +1840,8 @@ ${JSON.stringify(dataForAI, null, 2)}
                             setDimensions(mergedData.dimensions);
                             setScores(mergedData.scores);
 
-                            // 先直接加载历史记录，不阻塞
+                            // 直接加载历史记录，不执行迁移
+                            // 标签迁移只在导入或手动触发时执行
                             if (mergedData.history) {
                                 setHistory(mergedData.history);
                             }
@@ -1866,18 +1856,6 @@ ${JSON.stringify(dataForAI, null, 2)}
 
                             // 保存合并后的数据到 localStorage
                             localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedData));
-
-                            // 延迟执行标签迁移，不阻塞
-                            if (mergedData.history && mergedData.history.length > 0) {
-                                setTimeout(() => {
-                                    const migratedHistory = migrateHistoryTags(mergedData.history);
-                                    if (migratedHistory !== mergedData.history) {
-                                        setHistory(migratedHistory);
-                                        mergedData.history = migratedHistory;
-                                        localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedData));
-                                    }
-                                }, 200);
-                            }
                         } else if (localTime > cloudTime && localHasData) {
                             // 本地数据更新 - 智能合并，防止数据丢失
 
@@ -1901,18 +1879,10 @@ ${JSON.stringify(dataForAI, null, 2)}
                             // 2. 关键：如果本地 history 是空的但云端有数据，保留云端的
                             if ((!localData.history || localData.history.length === 0) &&
                                 cloudData.history && cloudData.history.length > 0) {
-                                // 先直接加载，不阻塞
+                                // 直接加载，不执行迁移
+                                // 标签迁移只在导入或手动触发时执行
                                 localData.history = cloudData.history;
                                 setHistory(cloudData.history);
-
-                                // 延迟执行标签迁移
-                                setTimeout(() => {
-                                    const migratedHistory = migrateHistoryTags(cloudData.history);
-                                    if (migratedHistory !== cloudData.history) {
-                                        localData.history = migratedHistory;
-                                        setHistory(migratedHistory);
-                                    }
-                                }, 200);
                             }
 
                             // 3. 如果本地 scores 全是0或空，但云端有非零数据，保留云端的
@@ -2109,14 +2079,22 @@ ${JSON.stringify(dataForAI, null, 2)}
                             alert("JSON 文件格式不正确");
                             return;
                         }
+
+                        // JSON 导入时，对历史记录执行标签迁移
+                        let importedHistory = data.history || [];
+                        if (importedHistory.length > 0) {
+                            console.log('[Import] 正在为导入的 JSON 数据识别标签...');
+                            importedHistory = migrateHistoryTags(importedHistory);
+                        }
+
                         setName(data.name || "");
                         setAvatar(data.avatar || null);
                         setDimensions(data.dimensions);
                         setScores(data.scores);
-                        setHistory(data.history || []);
+                        setHistory(importedHistory);
                         if (data.systemTags) setSystemTags(data.systemTags);
                         if (data.recentTags) setRecentTags(data.recentTags);
-                        saveData(data.scores, data.history, data.dimensions, data.name, data.avatar, data.systemTags, data.recentTags);
+                        saveData(data.scores, importedHistory, data.dimensions, data.name, data.avatar, data.systemTags, data.recentTags);
                         setStep(4);
                         setModalType(null);
                         alert("JSON 数据导入成功！");
@@ -2216,6 +2194,8 @@ ${JSON.stringify(dataForAI, null, 2)}
                         alert("CSV 文件中没有找到有效数据");
                         return;
                     }
+
+                    console.log(`[Import] CSV 导入完成，已为 ${importedHistory.length} 条记录识别标签`);
 
                     // 合并到现有数据
                     const mergedHistory = [...history, ...importedHistory];
