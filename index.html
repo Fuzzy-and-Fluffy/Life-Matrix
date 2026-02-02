@@ -14,6 +14,13 @@
     <link rel="apple-touch-icon" href="icon-192.png">
 
     <!-- 核心库 -->
+    <!-- 预连接到 CDN 以加速资源加载 -->
+    <link rel="preconnect" href="https://cdn.tailwindcss.com">
+    <link rel="preconnect" href="https://unpkg.com">
+    <link rel="preconnect" href="https://www.gstatic.com">
+    <link rel="dns-prefetch" href="https://cdn.sheetjs.com">
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -68,7 +75,37 @@
 </head>
 
 <body>
-    <div id="root"></div>
+    <div id="root">
+        <!-- 初始骨架屏 - 在 React 加载前显示 -->
+        <div style="min-height: 100vh; background-color: #f8fafc; display: flex; align-items: center; justify-content: center; padding: 1.5rem;">
+            <div style="width: 100%; max-width: 28rem;">
+                <!-- Logo -->
+                <div style="display: flex; justify-content: center; margin-bottom: 2rem;">
+                    <div style="display: inline-flex; padding: 1rem; background-color: #f0f9ff; border-radius: 1rem; color: #0ea5e9; box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.05);">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                            <path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z"/>
+                        </svg>
+                    </div>
+                </div>
+                <!-- 雷达图骨架 -->
+                <div style="background-color: white; border-radius: 2.5rem; padding: 2rem; box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25); margin-bottom: 1rem;">
+                    <div style="width: 100%; padding-bottom: 100%; background-color: #f1f5f9; border-radius: 50%; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;"></div>
+                </div>
+                <!-- 按钮骨架 -->
+                <div style="display: flex; gap: 0.75rem;">
+                    <div style="flex: 1; height: 4rem; background-color: white; border-radius: 1rem; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;"></div>
+                    <div style="flex: 1; height: 4rem; background-color: white; border-radius: 1rem; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;"></div>
+                    <div style="flex: 1; height: 4rem; background-color: white; border-radius: 1rem; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;"></div>
+                </div>
+            </div>
+        </div>
+        <style>
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.5; }
+            }
+        </style>
+    </div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo } = React;
@@ -122,8 +159,8 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
 
-        // 启用离线持久化
-        db.enablePersistence().catch(err => {
+        // 启用离线持久化（异步，不阻塞渲染）
+        db.enablePersistence({ synchronizeTabs: true }).catch(err => {
             if (err.code === 'failed-precondition') {
                 console.log('Multiple tabs open, persistence enabled in first tab only');
             } else if (err.code === 'unimplemented') {
@@ -1622,12 +1659,15 @@ ${JSON.stringify(dataForAI, null, 2)}
                 const unsubscribe = auth.onAuthStateChanged(async (user) => {
                     setCurrentUser(user);
 
-                    if (user) {
-                        // 用户已登录，需要等待 Firestore 同步完成
-                        await syncWithFirestore(user.uid);
-                    }
-                    // 同步完成后关闭 loading
+                    // 立即关闭 loading，允许界面渲染
                     setAuthLoading(false);
+
+                    if (user) {
+                        // 后台同步，不阻塞 UI
+                        syncWithFirestore(user.uid).catch(err => {
+                            console.error('Background sync failed:', err);
+                        });
+                    }
                 });
                 return () => unsubscribe();
             }, []);
@@ -2188,12 +2228,26 @@ ${JSON.stringify(dataForAI, null, 2)}
 
             // --- Views ---
 
-            // 加载中状态
+            // 加载中状态 - 骨架屏
             if (authLoading) return (
-                <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-                    <div className="text-center animate-fade-in">
-                        <div className="inline-flex p-4 bg-sky-50 rounded-2xl text-sky-500 shadow-inner mb-4 animate-pulse"><Icon name="sparkle" size={32} /></div>
-                        <p className="text-slate-400 text-sm font-bold">加载中...</p>
+                <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+                    <div className="w-full max-w-md animate-fade-in">
+                        {/* Logo */}
+                        <div className="flex justify-center mb-8">
+                            <div className="inline-flex p-4 bg-sky-50 rounded-2xl text-sky-500 shadow-inner animate-pulse">
+                                <Icon name="sparkle" size={32} />
+                            </div>
+                        </div>
+                        {/* 骨架屏 - 雷达图 */}
+                        <div className="bg-white rounded-[2.5rem] p-8 shadow-xl mb-4">
+                            <div className="w-full aspect-square bg-slate-100 rounded-full animate-pulse"></div>
+                        </div>
+                        {/* 骨架屏 - 底部按钮 */}
+                        <div className="flex gap-3">
+                            <div className="flex-1 h-16 bg-white rounded-2xl animate-pulse"></div>
+                            <div className="flex-1 h-16 bg-white rounded-2xl animate-pulse"></div>
+                            <div className="flex-1 h-16 bg-white rounded-2xl animate-pulse"></div>
+                        </div>
                     </div>
                 </div>
             );
