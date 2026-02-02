@@ -154,19 +154,24 @@
             measurementId: "G-XTY0XDG3DF"
         };
 
+        // 性能监控：启动时间
+        console.time('[Perf] App Init');
+
         // 初始化 Firebase
         firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
         const db = firebase.firestore();
 
-        // 启用离线持久化（异步，不阻塞渲染）
-        db.enablePersistence({ synchronizeTabs: true }).catch(err => {
-            if (err.code === 'failed-precondition') {
-                console.log('Multiple tabs open, persistence enabled in first tab only');
-            } else if (err.code === 'unimplemented') {
-                console.log('Browser does not support persistence');
-            }
-        });
+        // 启用离线持久化（完全异步，延迟执行，不阻塞渲染）
+        setTimeout(() => {
+            db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+                if (err.code === 'failed-precondition') {
+                    console.log('Multiple tabs open, persistence enabled in first tab only');
+                } else if (err.code === 'unimplemented') {
+                    console.log('Browser does not support persistence');
+                }
+            });
+        }, 0);
 
         // ==========================================
         // 1. 图标库
@@ -1662,16 +1667,9 @@ ${JSON.stringify(dataForAI, null, 2)}
                             if (data.dimensions) setDimensions(data.dimensions);
                             if (data.scores) setScores(data.scores);
 
-                            // 迁移历史记录中的标签
+                            // 先直接加载历史记录，不执行迁移（迁移会阻塞）
                             if (data.history) {
-                                const migratedHistory = migrateHistoryTags(data.history);
-                                setHistory(migratedHistory);
-
-                                // 如果标签有更新，保存回 localStorage
-                                if (migratedHistory !== data.history) {
-                                    const updatedData = { ...data, history: migratedHistory, updatedAt: new Date().toISOString() };
-                                    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedData));
-                                }
+                                setHistory(data.history);
                             }
 
                             if (data.systemTags) setSystemTags(data.systemTags);
@@ -1679,6 +1677,18 @@ ${JSON.stringify(dataForAI, null, 2)}
                             // 有 dimensions 就说明是老用户，跳转到雷达图
                             if (data.dimensions && data.dimensions.length > 0) {
                                 setStep(4);
+                            }
+
+                            // 延迟执行标签迁移，不阻塞界面渲染
+                            if (data.history && data.history.length > 0) {
+                                setTimeout(() => {
+                                    const migratedHistory = migrateHistoryTags(data.history);
+                                    if (migratedHistory !== data.history) {
+                                        setHistory(migratedHistory);
+                                        const updatedData = { ...data, history: migratedHistory, updatedAt: new Date().toISOString() };
+                                        localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedData));
+                                    }
+                                }, 100); // 延迟 100ms 执行，让界面先渲染
                             }
                         }
                     }
@@ -1711,18 +1721,25 @@ ${JSON.stringify(dataForAI, null, 2)}
                 return repaired;
             };
 
-            // --- 标签迁移函数：识别历史数据中的标签 ---
+            // --- 标签迁移函数：识别历史数据中的标签（优化版）---
             const migrateHistoryTags = (historyData) => {
                 if (!historyData || historyData.length === 0) return historyData;
 
+                // 检查是否所有记录都已经有标签，如果是则跳过迁移
+                const needsMigration = historyData.some(record => !record.tags || record.tags.length === 0);
+                if (!needsMigration) {
+                    return historyData; // 所有记录都有标签，无需迁移
+                }
+
                 let hasChanges = false;
+                let migratedCount = 0;
                 const migratedHistory = historyData.map(record => {
                     // 如果记录没有 tags 字段或 tags 为空数组，尝试从 text 中提取
                     if (!record.tags || record.tags.length === 0) {
                         const extractedTags = parseTagsFromText(record.text);
                         if (extractedTags && extractedTags.length > 0) {
-                            console.log(`[Tag Migration] 发现记录包含标签: "${record.text}" -> [${extractedTags.join(', ')}]`);
                             hasChanges = true;
+                            migratedCount++;
                             return { ...record, tags: extractedTags };
                         }
                     }
@@ -1730,7 +1747,7 @@ ${JSON.stringify(dataForAI, null, 2)}
                 });
 
                 if (hasChanges) {
-                    console.log(`[Tag Migration] 完成标签迁移，共更新 ${migratedHistory.filter(r => r.tags && r.tags.length > 0).length} 条记录的标签`);
+                    console.log(`[Tag Migration] 完成标签迁移，共更新 ${migratedCount} 条记录的标签`);
                 }
 
                 return migratedHistory;
@@ -1738,22 +1755,26 @@ ${JSON.stringify(dataForAI, null, 2)}
 
             // --- 立即从 localStorage 加载（PWA 快速启动优化）---
             useEffect(() => {
-                // 立即加载本地缓存数据，不等待 Firebase
-                loadFromLocalStorage();
+                console.time('[Perf] Data Load');
 
-                // 只有在本地有数据时才立即关闭 loading
-                // 如果本地没数据，等 Firebase 认证后再决定
+                // 检查是否有本地数据，立即关闭 loading
                 const saved = localStorage.getItem(STORAGE_KEY);
                 if (saved) {
                     try {
                         const data = JSON.parse(saved);
                         if (data && data.dimensions && data.dimensions.length > 0) {
+                            // 有数据就立即关闭 loading，让界面先渲染
                             setAuthLoading(false);
-                            return;
+                            console.log('[Perf] Auth loading closed, UI rendering');
                         }
                     } catch (e) { }
                 }
-                // 本地没有有效数据，保持 loading 状态等待 Firebase
+
+                // 异步加载数据，不阻塞渲染
+                setTimeout(() => {
+                    loadFromLocalStorage();
+                    console.timeEnd('[Perf] Data Load');
+                }, 0);
             }, []);
 
             // --- Firebase Auth 监听 ---
@@ -1763,6 +1784,7 @@ ${JSON.stringify(dataForAI, null, 2)}
 
                     // 立即关闭 loading，允许界面渲染
                     setAuthLoading(false);
+                    console.log('[Perf] Firebase Auth ready');
 
                     if (user) {
                         // 后台同步，不阻塞 UI
@@ -1772,6 +1794,12 @@ ${JSON.stringify(dataForAI, null, 2)}
                     }
                 });
                 return () => unsubscribe();
+            }, []);
+
+            // --- 首次渲染完成标记 ---
+            useEffect(() => {
+                console.timeEnd('[Perf] App Init');
+                console.log('[Perf] ✅ First render complete');
             }, []);
 
             // --- 后台静默同步 Firestore ---
@@ -1823,11 +1851,9 @@ ${JSON.stringify(dataForAI, null, 2)}
                             setDimensions(mergedData.dimensions);
                             setScores(mergedData.scores);
 
-                            // 迁移云端历史记录中的标签
+                            // 先直接加载历史记录，不阻塞
                             if (mergedData.history) {
-                                const migratedHistory = migrateHistoryTags(mergedData.history);
-                                setHistory(migratedHistory);
-                                mergedData.history = migratedHistory;
+                                setHistory(mergedData.history);
                             }
 
                             setSystemTags(mergedData.systemTags);
@@ -1840,6 +1866,18 @@ ${JSON.stringify(dataForAI, null, 2)}
 
                             // 保存合并后的数据到 localStorage
                             localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedData));
+
+                            // 延迟执行标签迁移，不阻塞
+                            if (mergedData.history && mergedData.history.length > 0) {
+                                setTimeout(() => {
+                                    const migratedHistory = migrateHistoryTags(mergedData.history);
+                                    if (migratedHistory !== mergedData.history) {
+                                        setHistory(migratedHistory);
+                                        mergedData.history = migratedHistory;
+                                        localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedData));
+                                    }
+                                }, 200);
+                            }
                         } else if (localTime > cloudTime && localHasData) {
                             // 本地数据更新 - 智能合并，防止数据丢失
 
@@ -1863,9 +1901,18 @@ ${JSON.stringify(dataForAI, null, 2)}
                             // 2. 关键：如果本地 history 是空的但云端有数据，保留云端的
                             if ((!localData.history || localData.history.length === 0) &&
                                 cloudData.history && cloudData.history.length > 0) {
-                                const migratedHistory = migrateHistoryTags(cloudData.history);
-                                localData.history = migratedHistory;
-                                setHistory(migratedHistory);
+                                // 先直接加载，不阻塞
+                                localData.history = cloudData.history;
+                                setHistory(cloudData.history);
+
+                                // 延迟执行标签迁移
+                                setTimeout(() => {
+                                    const migratedHistory = migrateHistoryTags(cloudData.history);
+                                    if (migratedHistory !== cloudData.history) {
+                                        localData.history = migratedHistory;
+                                        setHistory(migratedHistory);
+                                    }
+                                }, 200);
                             }
 
                             // 3. 如果本地 scores 全是0或空，但云端有非零数据，保留云端的
