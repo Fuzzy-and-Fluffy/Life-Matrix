@@ -1573,7 +1573,7 @@ ${JSON.stringify(dataForAI, null, 2)}
             { id: 'tag_2', name: '里程碑', appliesTo: [] }
         ];
 
-        // 从文本中解析所有格式的标签：【】、[]、#
+        // 从文本中解析所有格式的标签：【】、[]、#...#、#
         const parseTagsFromText = (text) => {
             if (!text) return [];
             const matches = [];
@@ -1597,7 +1597,16 @@ ${JSON.stringify(dataForAI, null, 2)}
                 }
             }
 
-            // 3. 解析#标签格式
+            // 3. 解析#标签#格式（双井号，支持空格）
+            const regex3a = /#([^#]+)#/g;
+            while ((match = regex3a.exec(text)) !== null) {
+                const tag = match[1].trim();
+                if (tag && !matches.includes(tag)) {
+                    matches.push(tag);
+                }
+            }
+
+            // 4. 解析#标签格式（单井号，不支持空格）
             const regex3 = /#([^\s#\[\]【】\,\.。，！？\!\?]+)/g;
             while ((match = regex3.exec(text)) !== null) {
                 const tag = match[1].trim();
@@ -1609,11 +1618,14 @@ ${JSON.stringify(dataForAI, null, 2)}
             return matches;
         };
 
-        // 统一标签格式：将文本中的 #标签 和 [标签] 转换为【标签】
+        // 统一标签格式：将文本中的 #标签#、#标签 和 [标签] 转换为【标签】
         const normalizeTagsInText = (text) => {
             if (!text) return text;
             let normalized = text;
             normalized = normalized.replace(/\[([^\]]+)\]/g, '【$1】');
+            // 先处理双井号格式 #tag#（支持空格）
+            normalized = normalized.replace(/#([^#]+)#/g, '【$1】');
+            // 再处理单井号格式 #tag（不支持空格）
             normalized = normalized.replace(/#([^\s#\[\]【】\,\.。，！？\!\?]+)/g, '【$1】');
             return normalized;
         };
