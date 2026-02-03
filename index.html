@@ -26,18 +26,22 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <!-- Firebase SDK - 延迟加载，首次渲染后动态注入，不阻塞启动 -->
 
-    <!-- SheetJS for Excel file parsing -->
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <!-- SheetJS - 按需加载（导入时才加载）-->
+    <!-- <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script> -->
 
-    <!-- Fonts -->
+    <!-- Fonts - 优化字体加载，添加 font-display -->
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
-        rel="stylesheet">
+        rel="stylesheet"
+        media="print"
+        onload="this.media='all'">
+    <noscript>
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
+            rel="stylesheet">
+    </noscript>
 
     <style>
         body {
@@ -157,21 +161,43 @@
         // 性能监控：启动时间
         console.time('[Perf] App Init');
 
-        // 初始化 Firebase
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-        const db = firebase.firestore();
+        // --- 动态加载 script 辅助函数 ---
+        const loadScript = (src) => new Promise((resolve, reject) => {
+            if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+            const s = document.createElement('script');
+            s.src = src;
+            s.onload = resolve;
+            s.onerror = reject;
+            document.head.appendChild(s);
+        });
 
-        // 启用离线持久化（完全异步，延迟执行，不阻塞渲染）
-        setTimeout(() => {
-            db.enablePersistence({ synchronizeTabs: true }).catch(err => {
-                if (err.code === 'failed-precondition') {
-                    console.log('Multiple tabs open, persistence enabled in first tab only');
-                } else if (err.code === 'unimplemented') {
-                    console.log('Browser does not support persistence');
-                }
-            });
-        }, 0);
+        // --- Firebase 延迟初始化（不阻塞首次渲染）---
+        let auth, db;
+        let _fbInitPromise;
+        const initFirebase = () => {
+            if (_fbInitPromise) return _fbInitPromise;
+            _fbInitPromise = (async () => {
+                console.time('[Perf] Firebase Load');
+                // firebase-app 必须先加载，auth 和 firestore 可并行
+                await loadScript('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
+                await Promise.all([
+                    loadScript('https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js'),
+                    loadScript('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js')
+                ]);
+                firebase.initializeApp(firebaseConfig);
+                auth = firebase.auth();
+                db = firebase.firestore();
+                db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+                    if (err.code !== 'failed-precondition' && err.code !== 'unimplemented') {
+                        console.error('Persistence:', err);
+                    }
+                });
+                console.timeEnd('[Perf] Firebase Load');
+            })();
+            return _fbInitPromise;
+        };
+        // 立即开始后台加载 Firebase（不等待，不阻塞渲染）
+        initFirebase();
 
         // ==========================================
         // 1. 图标库
@@ -730,17 +756,12 @@
             const fileInput = useRef(null);
             const avatarInput = useRef(null);
 
-            const handleFileChange = (e) => {
+            const handleFileChange = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
 
                 const fileName = file.name.toLowerCase();
                 const fileType = file.type.toLowerCase();
-
-                // 调试信息
-                console.log("File name:", file.name);
-                console.log("File type:", file.type);
-                console.log("File size:", file.size);
 
                 // 检测 Excel 文件：通过扩展名或 MIME 类型
                 const isExcel = fileName.endsWith('.xlsx') ||
@@ -750,22 +771,24 @@
                     fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
                     fileType === 'application/vnd.ms-excel';
 
-                console.log("Is Excel file:", isExcel);
-
                 if (isExcel) {
+                    // 按需加载 SheetJS（仅在导入 Excel 时加载）
+                    if (typeof XLSX === 'undefined') {
+                        try {
+                            await loadScript('https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js');
+                        } catch (err) {
+                            alert("加载 Excel 解析库失败，请检查网络连接");
+                            return;
+                        }
+                    }
                     const reader = new FileReader();
                     reader.onload = (ev) => {
                         try {
-                            console.log("Reading Excel file as ArrayBuffer...");
                             const data = new Uint8Array(ev.target.result);
                             const workbook = XLSX.read(data, { type: 'array' });
-                            // 获取第一个工作表
                             const sheetName = workbook.SheetNames[0];
-                            console.log("Sheet name:", sheetName);
                             const worksheet = workbook.Sheets[sheetName];
-                            // 转换为 CSV 文本
                             const csvContent = XLSX.utils.sheet_to_csv(worksheet);
-                            console.log("CSV preview:", csvContent.substring(0, 200));
                             onImport(csvContent);
                         } catch (err) {
                             console.error("Excel parse error:", err);
@@ -1664,23 +1687,22 @@ ${JSON.stringify(dataForAI, null, 2)}
                 }, 0);
             }, []);
 
-            // --- Firebase Auth 监听 ---
+            // --- Firebase Auth 监听（等待 Firebase 加载完成后启用）---
             useEffect(() => {
-                const unsubscribe = auth.onAuthStateChanged(async (user) => {
-                    setCurrentUser(user);
-
-                    // 立即关闭 loading，允许界面渲染
-                    setAuthLoading(false);
-                    console.log('[Perf] Firebase Auth ready');
-
-                    if (user) {
-                        // 后台同步，不阻塞 UI
-                        syncWithFirestore(user.uid).catch(err => {
-                            console.error('Background sync failed:', err);
-                        });
-                    }
+                let unsubscribe;
+                initFirebase().then(() => {
+                    unsubscribe = auth.onAuthStateChanged(async (user) => {
+                        setCurrentUser(user);
+                        setAuthLoading(false);
+                        console.log('[Perf] Firebase Auth ready');
+                        if (user) {
+                            syncWithFirestore(user.uid).catch(err => {
+                                console.error('Background sync failed:', err);
+                            });
+                        }
+                    });
                 });
-                return () => unsubscribe();
+                return () => { if (unsubscribe) unsubscribe(); };
             }, []);
 
             // --- 首次渲染完成标记 ---
