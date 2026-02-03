@@ -108,7 +108,141 @@
     </div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo } = React;
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+        // ==========================================
+        // 0. 全局配置与类型定义
+        // ==========================================
+
+        /**
+         * @file Life-Matrix 主应用文件
+         * @description 将人生视为一场无限游戏，让每一次微小的进化都可见
+         * @version 3.6.0
+         * @author Fuzzy-and-Fluffy
+         */
+
+        /**
+         * 全局配置常量
+         * @description 集中管理所有可配置项，便于维护和调整
+         */
+        const CONFIG = {
+            // 调试模式：发布前设为 false
+            DEBUG: false,
+
+            // 版本信息
+            VERSION: '3.6.0',
+
+            // 存储配置
+            STORAGE: {
+                KEY: 'life_matrix_v34_csv',           // localStorage 键名
+                GEMINI_API_KEY: 'gemini_api_key'      // Gemini API Key 存储键
+            },
+
+            // 数据限制
+            LIMITS: {
+                MAX_HISTORY_DISPLAY: 5,               // 首页显示的历史记录数
+                MAX_HISTORY_STORAGE: 100,             // 最大存储历史记录数
+                MAX_DIMENSIONS: 12,                   // 最大维度数
+                MIN_DIMENSIONS: 3,                    // 最小维度数
+                MAX_RECENT_TAGS: 10,                  // 最近使用标签数
+                MIN_PASSWORD_LENGTH: 6               // 最小密码长度
+            },
+
+            // 雷达图配置
+            RADAR: {
+                RADIUS: 125,                          // 雷达图半径
+                LABEL_DISTANCE: 155,                  // 标签距离中心的距离
+                DEFAULT_SIZE: 400,                    // 默认画布大小
+                MAX_SIZE: 480,                        // 最大画布大小
+                PADDING: 50                           // 画布边距
+            },
+
+            // 同步状态枚举
+            SYNC_STATUS: {
+                IDLE: 'idle',
+                SYNCING: 'syncing',
+                SYNCED: 'synced',
+                OFFLINE: 'offline'
+            }
+        };
+
+        /**
+         * 调试日志函数
+         * @description 仅在 DEBUG 模式下输出日志，生产环境静默
+         * @param {...any} args - 日志参数
+         */
+        const log = CONFIG.DEBUG
+            ? console.log.bind(console, '[LM]')
+            : () => {};
+
+        /**
+         * 性能日志函数
+         * @description 用于性能监控，生产环境也可启用
+         */
+        const perfLog = (label, action = 'log') => {
+            if (action === 'start') console.time(`[Perf] ${label}`);
+            else if (action === 'end') console.timeEnd(`[Perf] ${label}`);
+            else console.log(`[Perf] ${label}`);
+        };
+
+        // ==========================================
+        // JSDoc 类型定义（为 IDE 提供类型提示）
+        // ==========================================
+
+        /**
+         * 维度配置对象
+         * @typedef {Object} Dimension
+         * @property {string} id - 维度唯一标识，格式: 'dim_N' (预设) 或 'c_timestamp' (自定义)
+         * @property {string} name - 维度名称，如 "身心健康"
+         * @property {boolean} active - 是否启用该维度
+         * @property {string} color - Tailwind 背景色类名，如 "bg-emerald-400"
+         * @property {string} text - Tailwind 文字色类名，如 "text-emerald-500"
+         * @property {string} border - Tailwind 边框色类名，如 "border-emerald-100"
+         */
+
+        /**
+         * 历史记录对象
+         * @typedef {Object} HistoryRecord
+         * @property {string} dimName - 所属维度名称
+         * @property {string} dimColor - 维度背景色类名
+         * @property {string} text - 记录内容描述
+         * @property {string[]} tags - 标签数组，如 ["运动", "户外"]
+         * @property {number} pts - 获得积分（固定为 1）
+         * @property {number} timestamp - 记录时间戳（毫秒）
+         * @property {string} dateStr - 格式化日期字符串，如 "2024/1/13 10:30"
+         */
+
+        /**
+         * 系统标签对象
+         * @typedef {Object} SystemTag
+         * @property {string} id - 标签唯一标识，格式: 'tag_timestamp'
+         * @property {string} name - 标签名称
+         * @property {string[]} appliesTo - 适用的维度 ID 数组，空数组表示适用所有维度
+         */
+
+        /**
+         * 应用状态对象
+         * @typedef {Object} AppState
+         * @property {string} name - 用户昵称
+         * @property {string|null} avatar - Base64 编码的头像图片
+         * @property {number} step - 引导步骤 (1-4)
+         * @property {Dimension[]} dimensions - 维度配置数组
+         * @property {number[]} scores - 各维度积分数组（与 dimensions 平行）
+         * @property {HistoryRecord[]} history - 历史记录数组
+         * @property {SystemTag[]} systemTags - 系统标签数组
+         * @property {string[]} recentTags - 最近使用的标签（最多 10 个）
+         * @property {string} updatedAt - 最后更新时间 ISO 字符串
+         */
+
+        /**
+         * 同步状态
+         * @typedef {'idle'|'syncing'|'synced'|'offline'} SyncStatus
+         */
+
+        /**
+         * 模态框类型
+         * @typedef {'record'|'calendar'|'settings'|'auth'|'aiReview'|null} ModalType
+         */
 
         // --- PWA Service Worker 注册与自动更新 ---
         if ('serviceWorker' in navigator) {
@@ -210,8 +344,14 @@
         };
 
         // ==========================================
-        // 2. 常量与算法
+        // 2. 常量与核心算法
         // ==========================================
+
+        /**
+         * 默认维度配置
+         * @description 新用户的初始维度设置，包含 8 个人生领域
+         * @type {Dimension[]}
+         */
         const INITIAL_DIMS = [
             { id: 'dim_1', name: "身心健康", active: true, color: "bg-emerald-400", text: "text-emerald-500", border: "border-emerald-100" },
             { id: 'dim_2', name: "工作事业", active: true, color: "bg-blue-400", text: "text-blue-500", border: "border-blue-100" },
@@ -223,20 +363,75 @@
             { id: 'dim_8', name: "休闲玩乐", active: false, color: "bg-orange-400", text: "text-orange-500", border: "border-orange-100" },
         ];
 
+        /**
+         * 计算用户等级（二次递增模型）
+         *
+         * @description 使用二次函数实现等级递增，确保前期升级快、后期需要更多努力
+         *
+         * 数学公式：Level = floor(-2 + sqrt(4 + score))
+         *
+         * 等级对照表：
+         * - Level 0: 0-4 分
+         * - Level 1: 5-10 分
+         * - Level 2: 11-18 分
+         * - Level 3: 19-28 分
+         * - Level N: 需要累计 N² + 4N 分
+         *
+         * @param {number} score - 当前累计积分
+         * @returns {number} 等级数值（0 或正整数）
+         *
+         * @example
+         * calculateLevel(0)   // => 0
+         * calculateLevel(5)   // => 1
+         * calculateLevel(11)  // => 2
+         * calculateLevel(100) // => 8
+         */
         const calculateLevel = (score) => {
             if (!score || score < 5) return 0;
             return Math.floor(-2 + Math.sqrt(4 + score));
         };
 
+        /**
+         * 计算当前等级的升级进度百分比
+         *
+         * @description 计算从当前等级到下一等级的进度
+         *
+         * @param {number} score - 当前累计积分
+         * @returns {number} 进度百分比 (0-100)
+         *
+         * @example
+         * getProgress(5)  // => 0 (刚到 Level 1)
+         * getProgress(7)  // => 33.33 (Level 1 进度 1/3)
+         * getProgress(10) // => 83.33 (Level 1 即将升级)
+         */
         const getProgress = (score) => {
             const level = calculateLevel(score);
-            const sStart = level * level + 4 * level;
+            const sStart = level * level + 4 * level;      // 当前等级起始分数
             const nextL = level + 1;
-            const sEnd = nextL * nextL + 4 * nextL;
-            const needed = sEnd - sStart;
+            const sEnd = nextL * nextL + 4 * nextL;        // 下一等级起始分数
+            const needed = sEnd - sStart;                   // 升级所需分数
             return needed > 0 ? ((score - sStart) / needed) * 100 : 0;
         };
 
+        /**
+         * 计算各维度发展的平衡度
+         *
+         * @description 使用变异系数 (CV) 评估各维度发展的均衡程度
+         *
+         * 数学公式：Balance = max(0, 100 - CV × 100)
+         * 其中 CV = 标准差 / 平均值
+         *
+         * - 100%: 所有维度积分相等，完美平衡
+         * - 0%: 维度差异极大，严重失衡
+         *
+         * @param {number[]} scores - 各维度积分数组
+         * @returns {number} 平衡度百分比 (0-100)
+         *
+         * @example
+         * calculateBalance([10, 10, 10, 10]) // => 100 (完美平衡)
+         * calculateBalance([20, 0, 0, 0])    // => 0 (极度失衡)
+         * calculateBalance([8, 10, 12, 10])  // => ~87 (轻微失衡)
+         */
         const calculateBalance = (scores) => {
             if (!scores || scores.length === 0) return 100;
             const sum = scores.reduce((a, b) => a + b, 0);
@@ -1543,19 +1738,34 @@ ${JSON.stringify(dataForAI, null, 2)}
         };
 
         // ==========================================
-        // 4. 主逻辑 App
+        // 4. 工具函数与常量
         // ==========================================
+
+        /**
+         * 默认系统标签
+         * @type {SystemTag[]}
+         */
         const INITIAL_SYSTEM_TAGS = [
-            { id: 'tag_1', name: '人生中的第一次', appliesTo: [] }, // 空数组表示应用到所有维度
+            { id: 'tag_1', name: '人生中的第一次', appliesTo: [] },
             { id: 'tag_2', name: '里程碑', appliesTo: [] }
         ];
 
-        // 从文本中解析所有格式的标签：【】、[]、#
+        /**
+         * 从文本中解析所有格式的标签
+         *
+         * @description 支持三种标签格式：【标签】、[标签]、#标签
+         * @param {string} text - 要解析的文本
+         * @returns {string[]} 提取的标签数组（已去重）
+         *
+         * @example
+         * parseTagsFromText("今天【运动】了 #健身")  // => ["运动", "健身"]
+         * parseTagsFromText("完成[工作]任务")        // => ["工作"]
+         */
         const parseTagsFromText = (text) => {
             if (!text) return [];
             const matches = [];
 
-            // 1. 解析【】格式
+            // 1. 解析【】格式（中文方括号）
             const regex1 = /【([^】]+)】/g;
             let match;
             while ((match = regex1.exec(text)) !== null) {
@@ -1565,7 +1775,7 @@ ${JSON.stringify(dataForAI, null, 2)}
                 }
             }
 
-            // 2. 解析[]格式
+            // 2. 解析[]格式（英文方括号）
             const regex2 = /\[([^\]]+)\]/g;
             while ((match = regex2.exec(text)) !== null) {
                 const tag = match[1].trim();
@@ -1574,7 +1784,7 @@ ${JSON.stringify(dataForAI, null, 2)}
                 }
             }
 
-            // 3. 解析#标签格式
+            // 3. 解析#标签格式（话题标签）
             const regex3 = /#([^\s#\[\]【】\,\.。，！？\!\?]+)/g;
             while ((match = regex3.exec(text)) !== null) {
                 const tag = match[1].trim();
@@ -1586,7 +1796,13 @@ ${JSON.stringify(dataForAI, null, 2)}
             return matches;
         };
 
-        // 统一标签格式：将文本中的 #标签 和 [标签] 转换为【标签】
+        /**
+         * 统一标签格式为中文方括号
+         *
+         * @description 将 #标签 和 [标签] 转换为【标签】格式
+         * @param {string} text - 原始文本
+         * @returns {string} 格式化后的文本
+         */
         const normalizeTagsInText = (text) => {
             if (!text) return text;
             let normalized = text;
@@ -1595,10 +1811,18 @@ ${JSON.stringify(dataForAI, null, 2)}
             return normalized;
         };
 
-        // 自动识别文本中的标签词并加上【】
+        /**
+         * 自动识别文本中的已知标签词并添加标记
+         *
+         * @description 在文本中查找已知标签，自动添加【】包裹
+         * @param {string} text - 原始文本
+         * @param {string[]} availableTags - 可用标签列表
+         * @returns {string} 处理后的文本
+         */
         const autoWrapTagsInText = (text, availableTags) => {
             if (!text || !availableTags || availableTags.length === 0) return text;
             let result = text;
+            // 按长度降序排序，优先匹配长标签
             const sortedTags = [...availableTags].sort((a, b) => b.length - a.length);
 
             sortedTags.forEach(tag => {
@@ -1609,6 +1833,7 @@ ${JSON.stringify(dataForAI, null, 2)}
                     const before = result.substring(0, offset);
                     const openCount = (before.match(/【/g) || []).length;
                     const closeCount = (before.match(/】/g) || []).length;
+                    // 避免嵌套标记
                     if (openCount > closeCount) return match;
                     return `【${match}】`;
                 });
@@ -1616,7 +1841,14 @@ ${JSON.stringify(dataForAI, null, 2)}
             return result;
         };
 
-        // 更新最近使用的标签列表（保持最新的10个）
+        /**
+         * 更新最近使用的标签列表
+         *
+         * @description 将新使用的标签移到列表开头，保持最多 N 个
+         * @param {string[]} currentRecentTags - 当前最近标签列表
+         * @param {string[]} newTags - 新使用的标签
+         * @returns {string[]} 更新后的最近标签列表
+         */
         const updateRecentTags = (currentRecentTags, newTags) => {
             if (!newTags || newTags.length === 0) return currentRecentTags;
             const updated = [...currentRecentTags];
@@ -1625,60 +1857,366 @@ ${JSON.stringify(dataForAI, null, 2)}
                 if (index > -1) updated.splice(index, 1);
                 updated.unshift(tag);
             });
-            return updated.slice(0, 10);
+            return updated.slice(0, CONFIG.LIMITS.MAX_RECENT_TAGS);
         };
 
-        const App = () => {
-            const [step, setStep] = useState(1);
-            const [name, setName] = useState("");
-            const [avatar, setAvatar] = useState(null);
-            const [dimensions, setDimensions] = useState(INITIAL_DIMS);
-            const [scores, setScores] = useState([]);
-            const [history, setHistory] = useState([]);
-            const [systemTags, setSystemTags] = useState(INITIAL_SYSTEM_TAGS);
-            const [recentTags, setRecentTags] = useState([]); // 最近使用的标签历史（最多10个）
+        // ==========================================
+        // 5. 自定义 Hooks
+        // ==========================================
 
-            // Firebase Auth State
+        /**
+         * useAuth - 认证状态管理 Hook
+         *
+         * @description 封装 Firebase 认证相关的所有逻辑
+         * @returns {Object} 认证状态和方法
+         * @property {Object|null} currentUser - 当前登录用户
+         * @property {boolean} authLoading - 认证加载状态
+         * @property {string} authError - 认证错误信息
+         * @property {Function} signInWithGoogle - Google 登录
+         * @property {Function} signInWithEmail - 邮箱登录
+         * @property {Function} signUpWithEmail - 邮箱注册
+         * @property {Function} signOut - 退出登录
+         * @property {Function} clearAuthError - 清除错误信息
+         */
+        const useAuth = () => {
             const [currentUser, setCurrentUser] = useState(null);
             const [authLoading, setAuthLoading] = useState(true);
-            const [syncStatus, setSyncStatus] = useState('idle'); // 'idle' | 'syncing' | 'synced' | 'offline'
-            const [isNewUser, setIsNewUser] = useState(false); // 是否为新用户（无云端数据）
+            const [authError, setAuthError] = useState('');
+            const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
+            const [authEmail, setAuthEmail] = useState('');
+            const [authPassword, setAuthPassword] = useState('');
 
-            // Modal States
-            const [modalType, setModalType] = useState(null); // 'record' | 'calendar' | 'settings' | 'auth' | null
+            /**
+             * 将 Firebase 错误码转换为中文提示
+             * @param {string} code - Firebase 错误码
+             * @returns {string} 中文错误信息
+             */
+            const getAuthErrorMessage = useCallback((code) => {
+                const messages = {
+                    'auth/email-already-in-use': '该邮箱已被注册',
+                    'auth/invalid-email': '邮箱格式不正确',
+                    'auth/weak-password': '密码强度太弱',
+                    'auth/user-not-found': '用户不存在',
+                    'auth/wrong-password': '密码错误',
+                    'auth/too-many-requests': '尝试次数过多，请稍后再试',
+                    'auth/popup-closed-by-user': '登录窗口被关闭',
+                    'auth/network-request-failed': '网络连接失败',
+                    'auth/invalid-credential': '邮箱或密码错误'
+                };
+                return messages[code] || '登录失败，请重试';
+            }, []);
+
+            // Google OAuth 登录
+            const signInWithGoogle = useCallback(async () => {
+                try {
+                    setAuthError('');
+                    const provider = new firebase.auth.GoogleAuthProvider();
+                    await auth.signInWithPopup(provider);
+                    log('Google sign-in successful');
+                } catch (e) {
+                    console.error("Google sign-in error", e);
+                    setAuthError(getAuthErrorMessage(e.code));
+                }
+            }, [getAuthErrorMessage]);
+
+            // 邮箱密码登录
+            const signInWithEmail = useCallback(async () => {
+                if (!authEmail || !authPassword) {
+                    setAuthError('请填写邮箱和密码');
+                    return;
+                }
+                try {
+                    setAuthError('');
+                    await auth.signInWithEmailAndPassword(authEmail, authPassword);
+                    log('Email sign-in successful');
+                } catch (e) {
+                    console.error("Email sign-in error", e);
+                    setAuthError(getAuthErrorMessage(e.code));
+                }
+            }, [authEmail, authPassword, getAuthErrorMessage]);
+
+            // 邮箱密码注册
+            const signUpWithEmail = useCallback(async () => {
+                if (!authEmail || !authPassword) {
+                    setAuthError('请填写邮箱和密码');
+                    return;
+                }
+                if (authPassword.length < CONFIG.LIMITS.MIN_PASSWORD_LENGTH) {
+                    setAuthError(`密码至少需要${CONFIG.LIMITS.MIN_PASSWORD_LENGTH}位`);
+                    return;
+                }
+                try {
+                    setAuthError('');
+                    await auth.createUserWithEmailAndPassword(authEmail, authPassword);
+                    log('Email sign-up successful');
+                } catch (e) {
+                    console.error("Email sign-up error", e);
+                    setAuthError(getAuthErrorMessage(e.code));
+                }
+            }, [authEmail, authPassword, getAuthErrorMessage]);
+
+            // 退出登录
+            const handleSignOut = useCallback(async () => {
+                try {
+                    await auth.signOut();
+                    setAuthEmail('');
+                    setAuthPassword('');
+                    log('Sign out successful');
+                } catch (e) {
+                    console.error("Sign out error", e);
+                }
+            }, []);
+
+            // 清除错误
+            const clearAuthError = useCallback(() => {
+                setAuthError('');
+            }, []);
+
+            // 监听认证状态变化
+            useEffect(() => {
+                const unsubscribe = auth.onAuthStateChanged((user) => {
+                    setCurrentUser(user);
+                    setAuthLoading(false);
+                    log('Auth state changed:', user ? user.email : 'logged out');
+                });
+                return () => unsubscribe();
+            }, []);
+
+            return {
+                // 状态
+                currentUser,
+                authLoading,
+                setAuthLoading,
+                authError,
+                authMode,
+                authEmail,
+                authPassword,
+                // Setters
+                setAuthMode,
+                setAuthEmail,
+                setAuthPassword,
+                // 方法
+                signInWithGoogle,
+                signInWithEmail,
+                signUpWithEmail,
+                signOut: handleSignOut,
+                clearAuthError,
+                getAuthErrorMessage
+            };
+        };
+
+        /**
+         * useDataSync - 数据同步管理 Hook
+         *
+         * @description 封装 localStorage 和 Firestore 数据同步逻辑
+         * @param {Object|null} currentUser - 当前登录用户
+         * @returns {Object} 同步状态和方法
+         */
+        const useDataSync = (currentUser) => {
+            const [syncStatus, setSyncStatus] = useState(CONFIG.SYNC_STATUS.IDLE);
+            const [isNewUser, setIsNewUser] = useState(false);
+
+            /**
+             * 数据完整性检查：确保关键字段不丢失
+             *
+             * @param {Object} data - 要检查的数据
+             * @param {Object} currentState - 当前状态（用于修复）
+             * @returns {Object} 修复后的数据
+             */
+            const ensureDataIntegrity = useCallback((data, currentState) => {
+                const repaired = { ...data };
+                let hasRepairs = false;
+
+                // 确保 name 和 avatar 不丢失
+                if (!repaired.name && currentState.name) {
+                    log('Data Integrity: 修复丢失的 name');
+                    repaired.name = currentState.name;
+                    hasRepairs = true;
+                }
+                if (!repaired.avatar && currentState.avatar) {
+                    log('Data Integrity: 修复丢失的 avatar');
+                    repaired.avatar = currentState.avatar;
+                    hasRepairs = true;
+                }
+
+                if (hasRepairs) {
+                    log('Data Integrity: 数据已修复');
+                }
+
+                return repaired;
+            }, []);
+
+            /**
+             * 从 localStorage 加载数据
+             * @returns {AppState|null} 加载的数据或 null
+             */
+            const loadFromLocalStorage = useCallback(() => {
+                try {
+                    const saved = localStorage.getItem(CONFIG.STORAGE.KEY);
+                    if (saved) {
+                        return JSON.parse(saved);
+                    }
+                } catch (e) {
+                    console.error("LocalStorage load error", e);
+                }
+                return null;
+            }, []);
+
+            /**
+             * 保存数据到 localStorage
+             * @param {Object} data - 要保存的数据
+             */
+            const saveToLocalStorage = useCallback((data) => {
+                try {
+                    localStorage.setItem(CONFIG.STORAGE.KEY, JSON.stringify(data));
+                    log('Data saved to localStorage');
+                } catch (e) {
+                    console.error("LocalStorage save error", e);
+                }
+            }, []);
+
+            /**
+             * 同步数据到 Firestore
+             * @param {string} userId - 用户 ID
+             * @param {Object} data - 要同步的数据
+             */
+            const syncToFirestore = useCallback(async (userId, data) => {
+                if (!userId) return;
+                try {
+                    setSyncStatus(CONFIG.SYNC_STATUS.SYNCING);
+                    await db.collection('users').doc(userId).set(data, { merge: true });
+                    setSyncStatus(CONFIG.SYNC_STATUS.SYNCED);
+                    log('Data synced to Firestore');
+                } catch (e) {
+                    console.error("Firestore save error", e);
+                    setSyncStatus(CONFIG.SYNC_STATUS.OFFLINE);
+                }
+            }, []);
+
+            /**
+             * 从 Firestore 加载数据
+             * @param {string} userId - 用户 ID
+             * @returns {Object|null} 云端数据或 null
+             */
+            const loadFromFirestore = useCallback(async (userId) => {
+                if (!userId) return null;
+                try {
+                    const doc = await db.collection('users').doc(userId).get();
+                    if (doc.exists) {
+                        return doc.data();
+                    }
+                } catch (e) {
+                    console.error("Firestore load error", e);
+                }
+                return null;
+            }, []);
+
+            return {
+                syncStatus,
+                setSyncStatus,
+                isNewUser,
+                setIsNewUser,
+                ensureDataIntegrity,
+                loadFromLocalStorage,
+                saveToLocalStorage,
+                syncToFirestore,
+                loadFromFirestore
+            };
+        };
+
+        // ==========================================
+        // 6. 主应用组件 App
+        // ==========================================
+
+        /**
+         * App - 主应用组件
+         *
+         * @description Life-Matrix 的根组件，管理所有应用状态和业务逻辑
+         *
+         * 状态分类：
+         * 1. 用户数据状态 (name, avatar, dimensions, scores, history, etc.)
+         * 2. 认证状态 (currentUser, authLoading, syncStatus)
+         * 3. UI 状态 (modalType, selectedDimIdx, editingRecordIdx)
+         *
+         * 主要功能模块：
+         * - 数据持久化：localStorage + Firebase Firestore
+         * - 用户认证：Google OAuth + Email/Password
+         * - 记录管理：创建、编辑、删除进度记录
+         * - 数据导入导出：JSON、CSV、XLSX 格式支持
+         */
+        const App = () => {
+            // ========== 用户数据状态 ==========
+            /** @type {[number, Function]} 引导步骤 (1-4)，4 为主界面 */
+            const [step, setStep] = useState(1);
+            /** @type {[string, Function]} 用户昵称 */
+            const [name, setName] = useState("");
+            /** @type {[string|null, Function]} 用户头像（Base64） */
+            const [avatar, setAvatar] = useState(null);
+            /** @type {[Dimension[], Function]} 维度配置数组 */
+            const [dimensions, setDimensions] = useState(INITIAL_DIMS);
+            /** @type {[number[], Function]} 各维度积分（与 dimensions 平行） */
+            const [scores, setScores] = useState([]);
+            /** @type {[HistoryRecord[], Function]} 历史记录数组 */
+            const [history, setHistory] = useState([]);
+            /** @type {[SystemTag[], Function]} 系统标签配置 */
+            const [systemTags, setSystemTags] = useState(INITIAL_SYSTEM_TAGS);
+            /** @type {[string[], Function]} 最近使用的标签（最多 10 个） */
+            const [recentTags, setRecentTags] = useState([]);
+
+            // ========== 认证与同步状态 ==========
+            /** @type {[Object|null, Function]} Firebase 当前用户 */
+            const [currentUser, setCurrentUser] = useState(null);
+            /** @type {[boolean, Function]} 认证加载状态 */
+            const [authLoading, setAuthLoading] = useState(true);
+            /** @type {[SyncStatus, Function]} 同步状态 */
+            const [syncStatus, setSyncStatus] = useState(CONFIG.SYNC_STATUS.IDLE);
+            /** @type {[boolean, Function]} 是否为新用户（无云端数据） */
+            const [isNewUser, setIsNewUser] = useState(false);
+
+            // ========== UI 交互状态 ==========
+            /** @type {[ModalType, Function]} 当前显示的模态框类型 */
+            const [modalType, setModalType] = useState(null);
+            /** @type {[number, Function]} 当前选中的维度索引 */
             const [selectedDimIdx, setSelectedDimIdx] = useState(0);
-            const [editingRecordIdx, setEditingRecordIdx] = useState(null); // null 表示新建，数字表示编辑第几条记录
+            /** @type {[number|null, Function]} 编辑中的记录索引（null 为新建） */
+            const [editingRecordIdx, setEditingRecordIdx] = useState(null);
+            /** @type {[string, Function]} 自定义维度名称输入 */
             const [customDimName, setCustomDimName] = useState("");
 
+            /** @type {React.RefObject} 文件输入引用 */
             const fileInputRef = useRef(null);
 
-            // --- 常量 ---
-            const STORAGE_KEY = 'life_matrix_v34_csv';
+            // ========== 常量（使用全局配置） ==========
+            const STORAGE_KEY = CONFIG.STORAGE.KEY;
 
-            // --- 从 localStorage 加载 ---
+            // ========== 数据持久化函数 ==========
+
+            /**
+             * 从 localStorage 加载用户数据
+             *
+             * @description 应用启动时调用，恢复上次保存的状态
+             * 注意：标签迁移仅在导入或手动触发时执行，不在加载时执行
+             */
             const loadFromLocalStorage = () => {
                 try {
                     const saved = localStorage.getItem(STORAGE_KEY);
                     if (saved) {
                         const data = JSON.parse(saved);
                         if (data) {
+                            // 恢复用户数据
                             if (data.name) setName(data.name);
                             if (data.avatar) setAvatar(data.avatar);
                             if (data.dimensions) setDimensions(data.dimensions);
                             if (data.scores) setScores(data.scores);
-
-                            // 直接加载历史记录，不执行迁移
-                            // 标签迁移只在导入或手动触发时执行
-                            if (data.history) {
-                                setHistory(data.history);
-                            }
-
+                            if (data.history) setHistory(data.history);
                             if (data.systemTags) setSystemTags(data.systemTags);
                             if (data.recentTags) setRecentTags(data.recentTags);
-                            // 有 dimensions 就说明是老用户，跳转到雷达图
+
+                            // 有维度数据说明是老用户，直接进入主界面
                             if (data.dimensions && data.dimensions.length > 0) {
                                 setStep(4);
                             }
+                            log('Data loaded from localStorage');
                         }
                     }
                 } catch (e) {
@@ -1686,48 +2224,63 @@ ${JSON.stringify(dataForAI, null, 2)}
                 }
             };
 
-            // --- 数据健康检查：确保关键字段不丢失 ---
+            /**
+             * 数据完整性检查
+             *
+             * @description 确保关键字段（name, avatar）不会因同步问题丢失
+             * @param {Object} data - 要检查的数据对象
+             * @param {Object} currentState - 当前状态，用于修复缺失字段
+             * @returns {Object} 修复后的数据对象
+             */
             const ensureDataIntegrity = (data, currentState) => {
                 const repaired = { ...data };
                 let hasRepairs = false;
 
-                // 确保 name 和 avatar 不丢失
+                // 确保 name 不丢失
                 if (!repaired.name && currentState.name) {
-                    console.log('[Data Integrity] 修复丢失的 name:', currentState.name);
+                    log('Data Integrity: 修复丢失的 name');
                     repaired.name = currentState.name;
                     hasRepairs = true;
                 }
+                // 确保 avatar 不丢失
                 if (!repaired.avatar && currentState.avatar) {
-                    console.log('[Data Integrity] 修复丢失的 avatar');
+                    log('Data Integrity: 修复丢失的 avatar');
                     repaired.avatar = currentState.avatar;
                     hasRepairs = true;
                 }
 
                 if (hasRepairs) {
-                    console.log('[Data Integrity] 数据已修复');
+                    log('Data Integrity: 数据已修复');
                 }
 
                 return repaired;
             };
 
-            // --- 标签迁移函数：识别历史数据中的标签（优化版）---
+            /**
+             * 标签迁移函数
+             *
+             * @description 从历史记录的文本中提取标签，用于旧数据兼容
+             * 仅在以下情况调用：1) 数据导入时 2) 用户手动触发
+             *
+             * @param {HistoryRecord[]} historyData - 历史记录数组
+             * @returns {HistoryRecord[]} 迁移后的历史记录数组
+             */
             const migrateHistoryTags = (historyData) => {
                 if (!historyData || historyData.length === 0) return historyData;
 
-                // 检查是否所有记录都已经有标签，如果是则跳过迁移
+                // 检查是否需要迁移
                 const needsMigration = historyData.some(record => !record.tags || record.tags.length === 0);
                 if (!needsMigration) {
-                    return historyData; // 所有记录都有标签，无需迁移
+                    log('Tag Migration: 所有记录已有标签，跳过迁移');
+                    return historyData;
                 }
 
-                let hasChanges = false;
                 let migratedCount = 0;
                 const migratedHistory = historyData.map(record => {
-                    // 如果记录没有 tags 字段或 tags 为空数组，尝试从 text 中提取
+                    // 仅处理无标签的记录
                     if (!record.tags || record.tags.length === 0) {
                         const extractedTags = parseTagsFromText(record.text);
                         if (extractedTags && extractedTags.length > 0) {
-                            hasChanges = true;
                             migratedCount++;
                             return { ...record, tags: extractedTags };
                         }
@@ -1735,45 +2288,56 @@ ${JSON.stringify(dataForAI, null, 2)}
                     return record;
                 });
 
-                if (hasChanges) {
-                    console.log(`[Tag Migration] 完成标签迁移，共更新 ${migratedCount} 条记录的标签`);
-                }
-
+                log(`Tag Migration: 完成，共更新 ${migratedCount} 条记录`);
                 return migratedHistory;
             };
 
-            // --- 立即从 localStorage 加载（PWA 快速启动优化）---
-            useEffect(() => {
-                console.time('[Perf] Data Load');
+            // ========== 生命周期 Effects ==========
 
-                // 检查是否有本地数据，立即关闭 loading
+            /**
+             * Effect: 应用初始化（PWA 快速启动优化）
+             *
+             * @description
+             * 1. 检查本地是否有数据，有则立即关闭 loading
+             * 2. 异步加载完整数据，不阻塞首屏渲染
+             *
+             * 优化策略：先渲染 UI，后加载数据
+             */
+            useEffect(() => {
+                perfLog('Data Load', 'start');
+
+                // 快速检查：本地有数据就立即关闭 loading
                 const saved = localStorage.getItem(STORAGE_KEY);
                 if (saved) {
                     try {
                         const data = JSON.parse(saved);
                         if (data && data.dimensions && data.dimensions.length > 0) {
-                            // 有数据就立即关闭 loading，让界面先渲染
                             setAuthLoading(false);
-                            console.log('[Perf] Auth loading closed, UI rendering');
+                            log('快速启动：本地数据存在，关闭 loading');
                         }
-                    } catch (e) { }
+                    } catch (e) { /* 忽略解析错误 */ }
                 }
 
-                // 异步加载数据，不阻塞渲染
+                // 异步加载完整数据
                 setTimeout(() => {
                     loadFromLocalStorage();
-                    console.timeEnd('[Perf] Data Load');
+                    perfLog('Data Load', 'end');
                 }, 0);
             }, []);
 
-            // --- Firebase Auth 监听 ---
+            /**
+             * Effect: Firebase 认证状态监听
+             *
+             * @description
+             * 监听用户登录状态变化，触发数据同步
+             * - 登录时：后台静默同步 Firestore
+             * - 登出时：重置同步状态
+             */
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(async (user) => {
                     setCurrentUser(user);
-
-                    // 立即关闭 loading，允许界面渲染
                     setAuthLoading(false);
-                    console.log('[Perf] Firebase Auth ready');
+                    log('Auth state changed:', user ? user.email : 'logged out');
 
                     if (user) {
                         // 后台同步，不阻塞 UI
@@ -1785,16 +2349,37 @@ ${JSON.stringify(dataForAI, null, 2)}
                 return () => unsubscribe();
             }, []);
 
-            // --- 首次渲染完成标记 ---
+            /**
+             * Effect: 首次渲染完成标记（性能监控）
+             */
             useEffect(() => {
-                console.timeEnd('[Perf] App Init');
-                console.log('[Perf] ✅ First render complete');
+                perfLog('App Init', 'end');
+                log('✅ 首次渲染完成');
             }, []);
 
-            // --- 后台静默同步 Firestore ---
+            // ========== 数据同步函数 ==========
+
+            /**
+             * 与 Firestore 同步数据
+             *
+             * @description 智能合并本地和云端数据
+             *
+             * 同步策略：
+             * 1. 新用户（无云端数据）：上传本地数据到云端
+             * 2. 返回用户：比较 updatedAt 时间戳
+             *    - 云端更新：拉取云端数据，智能合并
+             *    - 本地更新：推送到云端，智能合并
+             *
+             * 智能合并规则：
+             * - name/avatar: 优先使用非空值
+             * - history: 优先使用非空数组
+             * - scores: 优先使用有数据的一方
+             *
+             * @param {string} userId - Firebase 用户 ID
+             */
             const syncWithFirestore = async (userId) => {
                 try {
-                    setSyncStatus('syncing');
+                    setSyncStatus(CONFIG.SYNC_STATUS.SYNCING);
                     const doc = await db.collection('users').doc(userId).get();
 
                     if (doc.exists) {
@@ -1915,15 +2500,28 @@ ${JSON.stringify(dataForAI, null, 2)}
                             }
                         }
                     }
-                    setSyncStatus('synced');
+                    setSyncStatus(CONFIG.SYNC_STATUS.SYNCED);
                 } catch (e) {
                     console.error("Firestore sync error", e);
-                    setSyncStatus('offline');
+                    setSyncStatus(CONFIG.SYNC_STATUS.OFFLINE);
                 }
             };
 
-            // --- 保存数据 ---
+            /**
+             * 保存应用数据
+             *
+             * @description 双重持久化：localStorage + Firestore（已登录时）
+             *
+             * @param {number[]} [newScores] - 新的积分数组
+             * @param {HistoryRecord[]} [newHistory] - 新的历史记录
+             * @param {Dimension[]} [newDims] - 新的维度配置
+             * @param {string} [newName] - 新的用户名
+             * @param {string} [newAvatar] - 新的头像
+             * @param {SystemTag[]} [newSystemTags] - 新的系统标签
+             * @param {string[]} [newRecentTags] - 新的最近标签
+             */
             const saveData = async (newScores, newHistory, newDims, newName, newAvatar, newSystemTags, newRecentTags) => {
+                // 构建数据对象，使用传入值或当前状态
                 const data = {
                     name: newName !== undefined ? newName : name,
                     avatar: newAvatar !== undefined ? newAvatar : avatar,
@@ -1938,41 +2536,56 @@ ${JSON.stringify(dataForAI, null, 2)}
                 // 数据完整性检查
                 const verifiedData = ensureDataIntegrity(data, { name, avatar });
 
-                // 始终保存到 localStorage
+                // 1. 始终保存到 localStorage（离线优先）
                 try {
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(verifiedData));
-                } catch (e) { console.error("LocalStorage save error", e); }
+                    log('Data saved to localStorage');
+                } catch (e) {
+                    console.error("LocalStorage save error", e);
+                }
 
-                // 如果已登录，同步到 Firestore
+                // 2. 如果已登录，同步到 Firestore
                 if (currentUser) {
                     try {
-                        setSyncStatus('syncing');
+                        setSyncStatus(CONFIG.SYNC_STATUS.SYNCING);
                         await db.collection('users').doc(currentUser.uid).set(verifiedData, { merge: true });
-                        setSyncStatus('synced');
+                        setSyncStatus(CONFIG.SYNC_STATUS.SYNCED);
+                        log('Data synced to Firestore');
                     } catch (e) {
                         console.error("Firestore save error", e);
-                        setSyncStatus('offline');
+                        setSyncStatus(CONFIG.SYNC_STATUS.OFFLINE);
                     }
                 }
             };
 
-            // --- 登录方法 ---
-            const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
+            // ========== 认证相关状态和方法 ==========
+            /** @type {['login'|'register', Function]} 认证模式 */
+            const [authMode, setAuthMode] = useState('login');
+            /** @type {[string, Function]} 认证邮箱 */
             const [authEmail, setAuthEmail] = useState('');
+            /** @type {[string, Function]} 认证密码 */
             const [authPassword, setAuthPassword] = useState('');
+            /** @type {[string, Function]} 认证错误信息 */
             const [authError, setAuthError] = useState('');
 
+            /**
+             * Google OAuth 登录
+             */
             const signInWithGoogle = async () => {
                 try {
                     setAuthError('');
                     const provider = new firebase.auth.GoogleAuthProvider();
                     await auth.signInWithPopup(provider);
+                    log('Google sign-in successful');
                 } catch (e) {
                     console.error("Google sign-in error", e);
                     setAuthError(getAuthErrorMessage(e.code));
                 }
             };
 
+            /**
+             * 邮箱密码登录
+             */
             const signInWithEmail = async () => {
                 if (!authEmail || !authPassword) {
                     setAuthError('请填写邮箱和密码');
@@ -1987,24 +2600,33 @@ ${JSON.stringify(dataForAI, null, 2)}
                 }
             };
 
+            /**
+             * 邮箱密码注册
+             */
             const signUpWithEmail = async () => {
                 if (!authEmail || !authPassword) {
                     setAuthError('请填写邮箱和密码');
                     return;
                 }
-                if (authPassword.length < 6) {
-                    setAuthError('密码至少需要6位');
+                if (authPassword.length < CONFIG.LIMITS.MIN_PASSWORD_LENGTH) {
+                    setAuthError(`密码至少需要${CONFIG.LIMITS.MIN_PASSWORD_LENGTH}位`);
                     return;
                 }
                 try {
                     setAuthError('');
                     await auth.createUserWithEmailAndPassword(authEmail, authPassword);
+                    log('Email sign-up successful');
                 } catch (e) {
                     console.error("Email sign-up error", e);
                     setAuthError(getAuthErrorMessage(e.code));
                 }
             };
 
+            /**
+             * 将 Firebase 错误码转换为中文提示
+             * @param {string} code - Firebase 错误码
+             * @returns {string} 中文错误信息
+             */
             const getAuthErrorMessage = (code) => {
                 const messages = {
                     'auth/email-already-in-use': '该邮箱已被注册',
@@ -2012,6 +2634,7 @@ ${JSON.stringify(dataForAI, null, 2)}
                     'auth/weak-password': '密码强度太弱',
                     'auth/user-not-found': '用户不存在',
                     'auth/wrong-password': '密码错误',
+                    'auth/invalid-credential': '邮箱或密码错误',
                     'auth/too-many-requests': '尝试次数过多，请稍后再试',
                     'auth/popup-closed-by-user': '登录窗口被关闭',
                     'auth/network-request-failed': '网络连接失败'
@@ -2019,19 +2642,27 @@ ${JSON.stringify(dataForAI, null, 2)}
                 return messages[code] || '登录失败，请重试';
             };
 
+            /**
+             * 退出登录
+             */
             const signOut = async () => {
                 try {
                     await auth.signOut();
-                    setSyncStatus('idle');
+                    setSyncStatus(CONFIG.SYNC_STATUS.IDLE);
                     setStep(1);
                     setAuthEmail('');
                     setAuthPassword('');
+                    log('Sign out successful');
                 } catch (e) {
                     console.error("Sign out error", e);
                 }
             };
 
-            // --- 导出逻辑 ---
+            // ========== 数据导入导出 ==========
+
+            /**
+             * 导出为 JSON 备份文件
+             */
             const handleExportJSON = () => {
                 const dataStr = JSON.stringify({ name, avatar, dimensions, scores, history });
                 const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
